@@ -1,0 +1,46 @@
+# ---- Operating system junk ----
+.DS_Store
+Thumbs.db
+desktop.ini
+*.lnk
+
+# ---- Office / CAD temp & backup files ----
+~$*
+*.tmp
+*.bak
+*.autosave
+*.swp
+
+# ---- Arduino / PlatformIO build output ----
+.pio/
+build/
+*.hex
+*.elf
+*.bin
+
+# ---- Python ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# ---- JavaScript / web ----
+node_modules/
+dist/
+.next/
+
+# ---- Editors ----
+.vscode/
+.idea/
+
+# ---- Secrets: NEVER commit these ----
+.env
+*.key
+secrets.*
+
+# ---- Logs & archives ----
+*.log
+*.zip
+*.rar
+*.7z

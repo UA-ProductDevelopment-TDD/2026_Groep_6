@@ -1,0 +1,11 @@
+# CODEOWNERS – who is automatically asked to review a Pull Request.
+# The LAST matching line wins, so general rules go first.
+# Everyone listed here must have Write access to the repo.
+
+# Michael (git manager) reviews everything
+*    @mim999
+
+# Later, to share the reviewing per role, add lines like:
+# /hardware/   @mim999 @github-name-of-teammate
+# /software/   @mim999 @github-name-of-teammate
+# /ui/         @mim999 @github-name-of-teammate

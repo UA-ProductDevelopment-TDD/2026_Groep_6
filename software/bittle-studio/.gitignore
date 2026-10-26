@@ -1,0 +1,11 @@
+.venv/
+node_modules/
+__pycache__/
+user-data/
+data/
+*.log
+test-results/
+backups/
+_site/
+_pages/
+.claude/

@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Bittle Duo</title>
+<style>
+  :root { --bg:#14161a; --panel:#1f232a; --text:#eef1f5; --muted:#8a93a3; --left:#4fa3ff; --right:#ff8a4f; --up:#7cf29c; }
+  * { box-sizing:border-box; -webkit-user-select:none; user-select:none; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:system-ui, -apple-system, "Segoe UI", sans-serif; overscroll-behavior:none; }
+  body { display:flex; flex-direction:column; }
+  .hidden { display:none !important; }
+
+  #pick { flex:1; display:flex; flex-direction:column; justify-content:center; gap:10px; padding:20px; }
+  #pick h1 { margin:0; font-size:28px; text-align:center; }
+  #pick p { margin:0 0 6px; color:var(--muted); text-align:center; }
+  #pick h2 { margin:10px 0 0; font-size:14px; color:var(--muted); font-weight:600; }
+  #pick .pair { display:flex; gap:10px; }
+  #pick button { flex:1; font-size:18px; padding:18px 8px; border:0; border-radius:14px; color:#0b0d10; font-weight:700; }
+  #pick button small { display:block; font-size:12px; font-weight:500; opacity:.8; margin-top:2px; }
+  #pick button.a { background:var(--left); } #pick button.b { background:var(--right); }
+
+  header { display:flex; align-items:center; gap:12px; padding:10px 14px; background:var(--panel); }
+  header .who { font-weight:700; }
+  header .info { color:var(--muted); font-size:13px; flex:1; }
+  header button { background:#333a45; color:var(--text); border:0; border-radius:8px; padding:8px 12px; font-size:14px; }
+
+  #dog { display:block; margin:8px auto 0; }
+  .help { color:var(--muted); font-size:13px; text-align:center; margin:4px 12px 8px; }
+
+  #pads { flex:1; display:flex; gap:10px; padding:0 10px 10px; min-height:0; }
+  .pad { flex:1; position:relative; border-radius:18px; background:var(--panel);
+    touch-action:none; overflow:hidden; border:2px solid transparent; }
+  .pad.active { border-color:var(--side); }
+  .pad .label { position:absolute; top:10px; left:0; right:0; text-align:center; font-weight:700; }
+  .pad .hint { position:absolute; left:0; right:0; text-align:center; color:var(--muted); font-size:12px; }
+  .pad .fwd { top:34px; } .pad .back { bottom:10px; }
+  .pad .track { position:absolute; left:50%; top:56px; bottom:34px; width:4px; margin-left:-2px; background:#333a45; border-radius:2px; }
+  .pad .foot { position:absolute; left:50%; width:56px; height:56px; margin:-28px 0 0 -28px;
+    border-radius:50%; background:var(--side); transition:transform .05s; }
+  .pad .foot.lifted { background:var(--up); box-shadow:0 0 0 8px rgba(124,242,156,.25); }
+</style>
+</head>
+<body>
+
+<section id="pick">
+  <h1>Bittle Duo</h1>
+  <p>Each of you controls two legs. Work together to make the dog walk. Pick a split, then one role each.</p>
+  <h2>Left / right</h2>
+  <div class="pair"><button class="a" data-role="left">LEFT<small>left legs</small></button>
+    <button class="b" data-role="right">RIGHT<small>right legs</small></button></div>
+  <h2>Front / back</h2>
+  <div class="pair"><button class="a" data-role="front">FRONT<small>front legs</small></button>
+    <button class="b" data-role="back">BACK<small>back legs</small></button></div>
+  <h2>Diagonal (like a chameleon walks)</h2>
+  <div class="pair"><button class="a" data-role="diag1">DIAGONAL 1<small>left front + right back</small></button>
+    <button class="b" data-role="diag2">DIAGONAL 2<small>right front + left back</small></button></div>
+  <p id="conn">Connecting…</p>
+</section>
+
+<section id="play" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
+  <header>
+    <span class="who" id="who"></span>
+    <span class="info" id="info"></span>
+    <button id="reset">Reset legs</button>
+    <button id="switch">Switch</button>
+  </header>
+  <svg id="dog" width="190" height="150" viewBox="0 0 150 120" aria-label="Dog seen from above"></svg>
+  <div class="help">Hold a pad and slide <b>sideways</b> to lift the foot, <b>up/down</b> to swing it. Let go to put it down.</div>
+  <div id="pads">
+    <div class="pad" data-slot="0"><div class="label"></div><div class="hint fwd">▲ forward</div>
+      <div class="track"></div><div class="foot"></div><div class="hint back">▼ back</div></div>
+    <div class="pad" data-slot="1"><div class="label"></div><div class="hint fwd">▲ forward</div>
+      <div class="track"></div><div class="foot"></div><div class="hint back">▼ back</div></div>
+  </div>
+</section>
+
+<script>
+const ROLES = {
+  left:  { name:'LEFT legs',   legs:['FL','BL'], partner:'right', color:'a' },
+  right: { name:'RIGHT legs',  legs:['FR','BR'], partner:'left',  color:'b' },
+  front: { name:'FRONT legs',  legs:['FL','FR'], partner:'back',  color:'a' },
+  back:  { name:'BACK legs',   legs:['BL','BR'], partner:'front', color:'b' },
+  diag1: { name:'DIAGONAL 1',  legs:['FL','BR'], partner:'diag2', color:'a' },
+  diag2: { name:'DIAGONAL 2',  legs:['FR','BL'], partner:'diag1', color:'b' },
+};
+const LEG_NAMES = { FL:'Left front', FR:'Right front', BL:'Left back', BR:'Right back' };
+const legs = { FL:{swing:0,lift:0}, FR:{swing:0,lift:0}, BL:{swing:0,lift:0}, BR:{swing:0,lift:0} };
+let role = null, ws = null, players = {};
+const dragging = {}, dirty = new Set();
+const mine = name => role && ROLES[role].legs.includes(name);
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { document.getElementById('conn').textContent = 'Connected to the laptop.';
+                      if (role) ws.send(JSON.stringify({type:'join', role})); };
+  ws.onclose = () => { document.getElementById('conn').textContent = 'Lost the laptop, retrying…';
+                       document.getElementById('info').textContent = 'Reconnecting…';
+                       setTimeout(connect, 1000); };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type !== 'status') return;
+    players = msg.players;
+    for (const name in msg.legs) if (!mine(name) || !dragging[name]) legs[name] = msg.legs[name];
+    render();
+  };
+}
+connect();
+
+function join(r) {
+  role = r;
+  const R = ROLES[r];
+  document.documentElement.style.setProperty('--side', R.color === 'a' ? 'var(--left)' : 'var(--right)');
+  document.getElementById('who').textContent = R.name;
+  document.querySelectorAll('.pad').forEach(pad => pad.querySelector('.label').textContent = LEG_NAMES[R.legs[pad.dataset.slot]] + ' leg');
+  document.getElementById('pick').classList.add('hidden');
+  document.getElementById('play').classList.remove('hidden');
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({type:'join', role}));
+  render();
+}
+document.querySelectorAll('#pick button[data-role]').forEach(b => b.onclick = () => join(b.dataset.role));
+document.getElementById('switch').onclick = () => {
+  document.getElementById('play').classList.add('hidden');
+  document.getElementById('pick').classList.remove('hidden');
+};
+document.getElementById('reset').onclick = () => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({type:'reset'})); };
+
+// --- pads: relative drag, so touching a pad never makes the leg jump ---
+document.querySelectorAll('.pad').forEach(pad => {
+  let start = null;
+  const name = () => ROLES[role].legs[pad.dataset.slot];
+  pad.addEventListener('pointerdown', e => {
+    if (!role) return;
+    pad.setPointerCapture(e.pointerId);
+    start = { x:e.clientX, y:e.clientY, swing:legs[name()].swing, leg:name() };
+    dragging[start.leg] = true; pad.classList.add('active');
+  });
+  pad.addEventListener('pointermove', e => {
+    if (!start) return;
+    const r = pad.getBoundingClientRect();
+    const leg = legs[start.leg];
+    leg.swing = Math.max(-1, Math.min(1, start.swing + (start.y - e.clientY) / (r.height * 0.4)));
+    leg.lift = Math.min(1, Math.abs(e.clientX - start.x) / (r.width * 0.35));
+    dirty.add(start.leg); render();
+  });
+  const end = () => {
+    if (!start) return;
+    dragging[start.leg] = false; legs[start.leg].lift = 0; dirty.add(start.leg);
+    start = null; pad.classList.remove('active'); render();
+  };
+  pad.addEventListener('pointerup', end);
+  pad.addEventListener('pointercancel', end);
+});
+
+// send at most ~20 times a second
+setInterval(() => {
+  if (!ws || ws.readyState !== 1) return;
+  for (const name of dirty) ws.send(JSON.stringify({type:'leg', leg:name, ...legs[name]}));
+  dirty.clear();
+}, 50);
+
+function render() {
+  if (!role) return;
+  const partner = ROLES[role].partner;
+  document.getElementById('info').textContent =
+    players[partner] ? `${ROLES[partner].name} player is here` : `Waiting for ${ROLES[partner].name}…`;
+  document.querySelectorAll('.pad').forEach(pad => {
+    const leg = legs[ROLES[role].legs[pad.dataset.slot]];
+    const foot = pad.querySelector('.foot');
+    const top = 56, h = pad.clientHeight - 56 - 34;
+    foot.style.top = (top + h * (1 - (leg.swing + 1) / 2)) + 'px';
+    foot.style.transform = `scale(${1 + leg.lift * 0.35})`;
+    foot.classList.toggle('lifted', leg.lift > 0.3);
+  });
+  drawDog();
+}
+
+function drawDog() {
+  // top-down dog: head at the top, your legs in your colour, your partner's in theirs
+  const spots = { FL:[35,35], FR:[115,35], BL:[35,90], BR:[115,90] };
+  const myColor = ROLES[role].color === 'a' ? 'var(--left)' : 'var(--right)';
+  const theirColor = ROLES[role].color === 'a' ? 'var(--right)' : 'var(--left)';
+  let s = '<rect x="50" y="20" width="50" height="85" rx="18" fill="#333a45"/>' +
+          '<circle cx="75" cy="12" r="11" fill="#333a45"/>';
+  for (const name in spots) {
+    const [x, y] = spots[name]; const leg = legs[name];
+    const yy = y - leg.swing * 14;
+    const col = leg.lift > 0.3 ? 'var(--up)' : (mine(name) ? myColor : theirColor);
+    s += `<line x1="${name[1]==='L'?50:100}" y1="${y}" x2="${x}" y2="${yy}" stroke="#555d6b" stroke-width="4"/>` +
+         `<circle cx="${x}" cy="${yy}" r="${(mine(name) ? 9 : 7) + leg.lift * 4}" fill="${col}"/>`;
+  }
+  document.getElementById('dog').innerHTML = s;
+}
+window.addEventListener('resize', render);
+</script>
+</body>
+</html>

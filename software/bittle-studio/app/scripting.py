@@ -188,11 +188,12 @@ class ScriptRunner:
                 readings = actor.sensor_readings()
                 if method == 'sensors':
                     return readings
-                query = args.get('name')
+                query, kind = args.get('name'), args.get('type')
                 sensor = next((value for key, value in readings.items()
-                               if query in (None, '', key, value['name'])), None)
+                               if query in (None, '', key, value['name']) and kind in (None, value['type'])), None)
                 if sensor is None:
-                    raise ValueError('Sensor not found; add an IMU in the robot Pose panel')
+                    what = 'a floor colour camera' if kind == 'color_camera' else 'an IMU'
+                    raise ValueError(f'Sensor not found; add {what} in Edit robot → Sensors')
                 return sensor
             if method in ('pose', 'servos', 'servo_angles'):
                 if actor is None:

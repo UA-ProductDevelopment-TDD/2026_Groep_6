@@ -27,25 +27,29 @@ server.STATIC = HERE  # serve index.html from ui/phone-controller instead of sta
 # --------------------------------------------------------------------------
 # Natural leg movement (experiment, not yet in server.py).
 #
-# The knee curves below are read from Bittle's own walking gait (wkF in
-# software/arduino/src/InstinctBittleESP.h), as (shoulder angle, knee angle):
-#  - DOWN: foot on the floor. The knee straightens at the front and the back of
-#    the step and bends a bit in the middle, so the foot stays on the floor.
-#  - UP:   foot in the air. The knee folds most in the middle of the swing and
-#    reaches out again at the front to put the foot down.
+# Knee curves as (shoulder angle, knee angle), based on Bittle's own walking
+# gait (wkF in software/arduino/src/InstinctBittleESP.h):
+#  - DOWN: foot on the floor. The knee is bent at the front and straightens as
+#    the leg moves back, so the leg pushes the body forward. (The gait itself
+#    also straightens the knee at the front, but then the dog walked backwards
+#    when players slide without lifting, so that part was left out.)
+#  - UP:   foot in the air. Taken from the gait: the knee folds most in the
+#    middle of the swing and reaches out again at the front.
+# Tested in Bittle Studio with a diagonal pattern: the dog walks forward
+# with no lift, a little lift and a full lift.
 # Shoulder: smaller angle = foot forward. Knee: smaller angle = leg more folded.
 # --------------------------------------------------------------------------
 NATURAL = {
     "F": {  # front legs (the "elbows")
-        "down": [(13, 14), (19, 11), (26, 7), (32, 4), (38, 2), (44, 1), (50, 4),
-                 (56, 6), (60, 11), (64, 20), (70, 26)],
-        "up":   [(13, 14), (17, 6), (21, 1), (26, -2), (34, -6), (41, -9), (54, -9),
+        "down": [(13, -2), (26, 1), (38, 3), (44, 4), (50, 7), (56, 11), (60, 15),
+                 (64, 20), (70, 26)],
+        "up":   [(13, 0), (17, -1), (21, -2), (26, -4), (34, -6), (41, -9), (54, -9),
                  (60, -7), (64, -3), (70, 6)],
     },
     "B": {  # back legs (the knees)
-        "down": [(22, 11), (27, 8), (33, 6), (39, 3), (49, 3), (55, 5), (61, 8),
-                 (64, 14), (70, 22), (74, 28)],
-        "up":   [(22, 11), (26, 3), (31, -2), (40, -5), (47, -7), (54, -9), (60, -7),
+        "down": [(22, -2), (33, 1), (39, 2), (49, 4), (55, 7), (61, 11),
+                 (64, 15), (70, 22), (74, 28)],
+        "up":   [(22, 0), (26, -1), (31, -3), (40, -5), (47, -7), (54, -9), (60, -7),
                  (65, -5), (68, -1), (74, 8)],
     },
 }

@@ -27,10 +27,12 @@ python serve.py --dry-run
 ## Natural leg movement (experiment)
 
 `serve.py` also changes how the legs move. In `server.py` the knee (on the front legs: the elbow) only moves a little in a straight line with the shoulder.
-`serve.py` uses the knee curves from Bittle's own walking gait (`wkF` in `software/arduino/src/InstinctBittleESP.h`) instead:
+`serve.py` uses knee curves based on Bittle's own walking gait (`wkF` in `software/arduino/src/InstinctBittleESP.h`) instead:
 
-- **Foot on the floor:** the knee straightens at the front and the back of the step and bends a bit in the middle, so the foot stays on the floor.
+- **Foot on the floor:** the knee is bent when the leg is at the front and straightens as the leg moves back, so the leg pushes the dog forward.
 - **Foot lifted:** the knee folds most in the middle of the swing and reaches out again at the front to put the foot down.
+
+In Bittle Studio, with a diagonal pattern, the dog walks forward with no lift (about 13 cm), a little lift (about 34 cm) and a full lift (about 29 cm), in 4 steps.
 
 The numbers are in the `NATURAL` table and `EXTRA_LIFT` at the top of `serve.py`. To compare with the old movement, add `--old-legs`:
 

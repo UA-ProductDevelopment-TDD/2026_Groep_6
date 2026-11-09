@@ -9,7 +9,7 @@
 - [ ] Docs
 
 ## Checklist
-- [ ] I only changed files in my own folder (or I asked the other role first)
+- [ ] I changed existing files where they are (no copies in another folder)
 - [ ] I tested it / looked at the result and it works
 - [ ] No passwords, API keys or personal data in my files
 - [ ] No huge files (videos, raw CAD, zip files over a few MB)

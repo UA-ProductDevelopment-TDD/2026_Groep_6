@@ -9,6 +9,7 @@ Run:  python server.py --serial COM5      (USB cable)
       python server.py --ble               (Bluetooth, finds the Bittle itself)
       python server.py --studio            (the simulated Bittle in Bittle Studio)
       python server.py --dry-run           (no robot, just prints the commands)
+Add --legs natural to try the natural leg movement (see README).
 """
 
 import argparse
@@ -17,6 +18,7 @@ import json
 import socket
 import threading
 import urllib.request
+from bisect import bisect_left
 from pathlib import Path
 
 from aiohttp import web, WSMsgType
@@ -66,8 +68,66 @@ def leg_angles(name, swing, lift):
     return round(shoulder), round(knee)
 
 
+# --------------------------------------------------------------------------
+# Natural leg movement (--legs natural). Not tested on the real Bittle yet.
+#
+# Knee curves as (shoulder angle, knee angle), based on Bittle's own walking
+# gait (wkF in software/arduino/src/InstinctBittleESP.h):
+#  - down: foot on the floor. The knee is bent at the front and straightens as
+#    the leg moves back, so the leg pushes the body forward. (The gait itself
+#    also straightens the knee at the front, but then the dog walked backwards
+#    when players slide without lifting, so that part was left out.)
+#  - up:   foot in the air. Taken from the gait: the knee folds most in the
+#    middle of the swing and reaches out again at the front.
+# Note: the lift is weaker than in leg_angles (about 15-25 degrees of extra
+# fold instead of 35), so check foot clearance on the real robot.
+# --------------------------------------------------------------------------
+NATURAL = {
+    "F": {  # front legs (the "elbows")
+        "down": [(13, -2), (26, 1), (38, 3), (44, 4), (50, 7), (56, 11), (60, 15),
+                 (64, 20), (70, 26)],
+        "up":   [(13, 0), (17, -1), (21, -2), (26, -4), (34, -6), (41, -9), (54, -9),
+                 (60, -7), (64, -3), (70, 6)],
+    },
+    "B": {  # back legs (the knees)
+        "down": [(22, -2), (33, 1), (39, 2), (49, 4), (55, 7), (61, 11),
+                 (64, 15), (70, 22), (74, 28)],
+        "up":   [(22, 0), (26, -1), (31, -3), (40, -5), (47, -7), (54, -9), (60, -7),
+                 (65, -5), (68, -1), (74, 8)],
+    },
+}
+EXTRA_LIFT = 15  # degrees of extra fold when the foot is fully up, so lifting is easy to see
+
+
+def curve(points, x):
+    """Straight-line interpolation between the (x, y) points; flat beyond the ends."""
+    xs = [p[0] for p in points]
+    if x <= xs[0]:
+        return points[0][1]
+    if x >= xs[-1]:
+        return points[-1][1]
+    i = bisect_left(xs, x)
+    (x0, y0), (x1, y1) = points[i - 1], points[i]
+    return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+
+
+def natural_leg_angles(name, swing, lift):
+    """Like leg_angles, but the knee follows the walking-gait curves above."""
+    cfg = FRONT if name[0] == "F" else BACK
+    shoulder = cfg["center"] - clamp(swing, -1, 1) * cfg["range"]
+    lift = clamp(lift, 0, 1)
+    knees = NATURAL[name[0]]
+    down, up = curve(knees["down"], shoulder), curve(knees["up"], shoulder)
+    knee = down + lift * (up - down) - lift * EXTRA_LIFT
+    return round(shoulder), round(knee)
+
+
+LEG_STYLES = {"simple": leg_angles, "natural": natural_leg_angles}
+
+
 class Game:
-    def __init__(self):
+    def __init__(self, legs="simple"):
+        self.leg_angles = LEG_STYLES[legs]
         self.legs = {name: {"swing": 0.0, "lift": 0.0} for name in LEGS}
         self.players = {role: set() for role in ROLES}
         self.changed = asyncio.Event()
@@ -75,7 +135,7 @@ class Game:
     def command(self):
         parts = ["i"]
         for name, leg in LEGS.items():
-            shoulder, knee = leg_angles(name, **self.legs[name])
+            shoulder, knee = self.leg_angles(name, **self.legs[name])
             parts += [str(leg["shoulder"]), str(shoulder), str(leg["knee"]), str(knee)]
         return " ".join(parts)
 
@@ -89,6 +149,7 @@ class Game:
             "type": "status",
             "legs": self.legs,
             "players": {role: len(ws) for role, ws in self.players.items()},
+            "roles": ROLES,  # the phone page takes each role's legs from here
         }
 
 
@@ -230,6 +291,7 @@ async def websocket(request):
     game = request.app["game"]
     ws = web.WebSocketResponse(heartbeat=10)
     await ws.prepare(request)
+    await ws.send_str(json.dumps(game.status()))  # the page needs the roles before a player picks one
     role = None
     try:
         async for msg in ws:
@@ -266,6 +328,15 @@ async def index(request):
     return web.FileResponse(STATIC / "index.html")
 
 
+def make_app(game):
+    """The web app: the phone page on / and the game on /ws. Used by main() and the tests."""
+    app = web.Application()
+    app["game"] = game
+    app.router.add_get("/", index)
+    app.router.add_get("/ws", websocket)
+    return app
+
+
 def local_ips():
     """All IPv4 addresses of this laptop; the one used for internet comes first."""
     ips = []
@@ -293,6 +364,8 @@ async def main():
     link.add_argument("--studio", nargs="?", const="http://127.0.0.1:8765", metavar="URL", help="drive the simulated Bittle in Bittle Studio")
     link.add_argument("--dry-run", action="store_true", help="no robot, print the commands")
     parser.add_argument("--port", type=int, default=8080, help="web server port (default 8080)")
+    parser.add_argument("--legs", choices=sorted(LEG_STYLES), default="simple",
+                        help="how the knees move: simple (default) or natural (experiment, see README)")
     args = parser.parse_args()
 
     if args.serial:
@@ -304,12 +377,9 @@ async def main():
     else:
         robot = DryRunRobot()
 
-    game = Game()
-    app = web.Application()
-    app["game"] = game
-    app.router.add_get("/", index)
-    app.router.add_get("/ws", websocket)
-    runner = web.AppRunner(app)
+    game = Game(legs=args.legs)
+    print(f"Leg movement: {args.legs}")
+    runner = web.AppRunner(make_app(game))
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", args.port).start()
     print(f"\nTest it on this laptop first:  http://localhost:{args.port}")

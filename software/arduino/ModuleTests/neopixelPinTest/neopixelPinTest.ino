@@ -17,7 +17,7 @@ void setup() {
 
 void loop() {
   for (int pin : PINS) {
-    Adafruit_NeoPixel strip(LED_COUNT, pin, NEO_GRB + NEO_KHZ800);
+    Adafruit_NeoPixel strip(LED_COUNT, pin, NEO_GRBW + NEO_KHZ800);
     strip.begin();
     strip.setBrightness(BRIGHTNESS);
     const uint32_t colors[] = { strip.Color(255, 0, 0), strip.Color(0, 255, 0), strip.Color(0, 0, 255),

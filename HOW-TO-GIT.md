@@ -12,7 +12,8 @@ voor je zelf iets probeert op te lossen.
 ## De gouden regels
 
 1. **Werk nooit op `main`.** Maak altijd eerst een branch (stap 2 hieronder).
-2. **Blijf in je eigen map:** `hardware/`, `software/`, `ui/` of `docs/`.
+2. **Mappen zijn per onderwerp, niet per persoon.** Iedereen mag in `hardware/`, `software/`, `ui/` en `docs/` werken.
+   Pas een bestand aan waar het staat. Maak geen kopie in een andere map.
 3. **Eerst pullen, op het einde pushen.** Bij elke werksessie.
 4. **Kleine Pull Requests.** Eén feature of fix per Pull Request, niet een hele week werk.
 5. **Geen geheimen, geen grote bestanden.** Geen wachtwoorden of API-keys. Niets groter dan een paar MB.
@@ -42,7 +43,7 @@ Je kan de bestanden openen en bewerken met eender welk programma.
 
 ### 2. Maak een branch voor je taak
 - Klik op **Current branch → New branch**.
-- Noem hem `<jouw-rol>/<wat-je-doet>`, met enkel kleine letters en streepjes. Voorbeelden:
+- Noem hem `<onderdeel>/<wat-je-doet>` (het deel van het project waar het vooral over gaat), met enkel kleine letters en streepjes. Voorbeelden:
   - `hw/servo-calibratie`
   - `sw/wandel-script`
   - `ui/startscherm`
@@ -50,7 +51,7 @@ Je kan de bestanden openen en bewerken met eender welk programma.
 - Controleer dat er **based on `main`** staat → **Create branch**.
 
 ### 3. Doe je werk
-Bewerk, maak of verwijder bestanden in de projectmap zoals altijd. Blijf in je eigen map.
+Bewerk, maak of verwijder bestanden in de projectmap zoals altijd. Zet nieuwe bestanden in de map die bij het onderwerp past.
 
 ### 4. Sla een momentopname op (commit)
 - Ga terug naar GitHub Desktop. Links zie je de bestanden die je veranderd hebt.

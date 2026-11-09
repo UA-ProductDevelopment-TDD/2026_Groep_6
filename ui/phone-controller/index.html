@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#101217">
+<title>Bittle Duo</title>
+<style>
+  :root {
+    --bg:#101217; --panel:#1a1e26; --panel-2:#232833; --line:#2f3542;
+    --text:#eef1f5; --muted:#8d96a6;
+    --a:#4fa3ff; --b:#ff8a4f; --up:#7cf29c; --bad:#ff5c6c;
+    --side:var(--a); --other:var(--b);
+    --r:18px;
+  }
+  * { box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:system-ui, -apple-system, "Segoe UI", sans-serif; overscroll-behavior:none; }
+  body { display:flex; flex-direction:column;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  button { font:inherit; color:inherit; cursor:pointer; }
+  .hidden { display:none !important; }
+
+  /* ---------- connection pill ---------- */
+  .pill { display:inline-flex; align-items:center; gap:7px; padding:5px 11px 5px 9px; border-radius:99px;
+    background:var(--panel-2); color:var(--muted); font-size:13px; white-space:nowrap; }
+  .pill::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--bad); }
+  .pill.ok::before { background:var(--up); }
+  .pill.wait::before { background:#f5c84c; }
+
+  /* ---------- role picker ---------- */
+  #pick { flex:1; overflow-y:auto; padding:22px 16px 28px; display:flex; flex-direction:column; gap:14px;
+    max-width:560px; width:100%; margin:0 auto; }
+  #pick .top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  #pick h1 { margin:0; font-size:30px; letter-spacing:-.5px; }
+  #pick h1 span { color:var(--a); } #pick h1 span + span { color:var(--b); }
+  #pick .intro { margin:0; color:var(--muted); line-height:1.4; }
+  .split { background:var(--panel); border-radius:var(--r); padding:14px; display:grid;
+    grid-template-columns:72px 1fr; gap:6px 14px; align-items:center; }
+  .split svg { grid-row:span 2; width:72px; height:90px; }
+  .split h2 { margin:0; font-size:16px; }
+  .split h2 small { display:block; color:var(--muted); font-weight:400; font-size:12px; margin-top:2px; }
+  .split .pair { display:flex; gap:8px; }
+  .role { flex:1; position:relative; border:0; border-radius:12px; padding:12px 6px 10px; font-weight:800;
+    font-size:15px; color:#0b0d10; line-height:1.15; }
+  .role small { display:block; font-size:11px; font-weight:500; opacity:.75; margin-top:3px; }
+  .role.a { background:var(--a); } .role.b { background:var(--b); }
+  .role:active { transform:scale(.97); }
+  .role .taken { position:absolute; top:-7px; right:-5px; background:var(--text); color:#0b0d10; font-size:10px;
+    font-weight:700; padding:2px 6px; border-radius:99px; }
+
+  /* ---------- play screen ---------- */
+  #play { flex:1; min-height:0; display:grid; gap:10px; padding:10px;
+    grid-template-areas:"bar bar" "dog dog" "p0 p1"; grid-template-columns:1fr 1fr; grid-template-rows:auto auto 1fr; }
+  .bar { grid-area:bar; display:flex; align-items:center; gap:8px; }
+  .me { display:flex; align-items:center; gap:8px; font-weight:800; font-size:15px; white-space:nowrap; flex:none; }
+  .me::before { content:""; width:12px; height:12px; border-radius:4px; background:var(--side); flex:none; }
+  .bar .pill { margin-left:auto; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .icon { flex:none; width:40px; height:40px; border:0; border-radius:12px; background:var(--panel-2);
+    display:grid; place-items:center; }
+  .icon svg { width:20px; height:20px; stroke:var(--text); fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .icon:active { background:var(--line); }
+
+  .dogwrap { grid-area:dog; display:flex; align-items:center; justify-content:center; gap:14px;
+    background:var(--panel); border-radius:var(--r); padding:6px 12px; }
+  #dog { width:120px; height:140px; flex:none; }
+  .legend { display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--muted); }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:-1px; }
+
+  .pad { position:relative; border-radius:var(--r); background:var(--panel); touch-action:none; overflow:hidden;
+    outline:2px solid transparent; outline-offset:-2px; transition:outline-color .15s, background .15s; min-height:0; }
+  .pad[data-slot="0"] { grid-area:p0; } .pad[data-slot="1"] { grid-area:p1; }
+  .pad.active { outline-color:var(--side); background:var(--panel-2); }
+  .pad.lifted { outline-color:var(--up); }
+  .pad .name { position:absolute; top:10px; left:0; right:0; text-align:center; font-weight:800; font-size:14px; }
+  .pad .state { position:absolute; top:29px; left:0; right:0; text-align:center; font-size:11px; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--muted); }
+  .pad.lifted .state { color:var(--up); }
+  .pad .edge { position:absolute; left:0; right:0; text-align:center; color:var(--muted); font-size:11px; }
+  .pad .fwd { top:48px; } .pad .back { bottom:8px; }
+  .pad .track { position:absolute; left:50%; top:68px; bottom:30px; width:6px; margin-left:-3px;
+    border-radius:3px; background:var(--line); }
+  .pad .track::after { content:""; position:absolute; left:-8px; right:-8px; top:50%; height:2px; margin-top:-1px;
+    background:var(--line); border-radius:1px; }
+  .pad .fill { position:absolute; left:50%; width:6px; margin-left:-3px; border-radius:3px; background:var(--side); opacity:.55; }
+  .pad .side { position:absolute; top:50%; font-size:18px; color:var(--line); margin-top:-12px; transition:color .15s; }
+  .pad .side.l { left:10px; } .pad .side.r { right:10px; }
+  .pad.active .side { color:var(--muted); }
+  .pad.lifted .side { color:var(--up); }
+  .pad .foot { position:absolute; left:50%; width:58px; height:58px; margin:-29px 0 0 -29px; border-radius:50%;
+    background:var(--side); box-shadow:0 4px 14px rgba(0,0,0,.35); display:grid; place-items:center;
+    transition:background .1s, box-shadow .1s; will-change:transform, top; }
+  .pad .foot::after { content:""; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,.18); }
+  .pad .foot.lifted { background:var(--up); box-shadow:0 0 0 10px rgba(124,242,156,.22), 0 10px 22px rgba(0,0,0,.45); }
+  .pad .coach { position:absolute; left:8px; right:8px; bottom:34px; text-align:center; font-size:12px;
+    color:var(--muted); line-height:1.4; pointer-events:none; transition:opacity .3s; }
+  .pad.used .coach { opacity:0; }
+
+  /* landscape phone: pads left and right, dog in the middle, one thumb per pad */
+  @media (orientation:landscape) and (max-height:540px) {
+    #play { grid-template-areas:"bar bar bar" "p0 dog p1"; grid-template-columns:1fr auto 1fr; grid-template-rows:auto 1fr; }
+    .dogwrap { flex-direction:column; padding:10px; }
+    #dog { width:110px; height:130px; }
+  }
+
+  /* toast */
+  #toast { position:fixed; left:50%; bottom:calc(18px + env(safe-area-inset-bottom)); transform:translate(-50%, 20px);
+    background:var(--text); color:#0b0d10; padding:9px 14px; border-radius:12px; font-size:14px; font-weight:600;
+    opacity:0; transition:opacity .2s, transform .2s; pointer-events:none; }
+  #toast.show { opacity:1; transform:translate(-50%, 0); }
+</style>
+</head>
+<body>
+
+<!-- ======================= pick a role ======================= -->
+<section id="pick">
+  <div class="top">
+    <h1><span>Bittle</span> <span>Duo</span></h1>
+    <span class="pill" id="conn">Connecting…</span>
+  </div>
+  <p class="intro">Each of you controls two legs of the same dog. Pick a split together, then each take one side.</p>
+  <div id="splits"></div>
+</section>
+
+<!-- ======================= play ======================= -->
+<section id="play" class="hidden">
+  <div class="bar">
+    <span class="me" id="who"></span>
+    <span class="pill" id="info"></span>
+    <button class="icon" id="reset" aria-label="Reset legs" title="Reset legs">
+      <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></button>
+    <button class="icon" id="switch" aria-label="Switch role" title="Switch role">
+      <svg viewBox="0 0 24 24"><path d="M7 7h13l-4-4"/><path d="M17 17H4l4 4"/></svg></button>
+  </div>
+
+  <div class="dogwrap">
+    <svg id="dog" viewBox="0 0 160 190" aria-label="Dog seen from above, head at the top"></svg>
+    <div class="legend">
+      <span><i style="background:var(--side)"></i>your legs</span>
+      <span><i style="background:var(--other)"></i>partner</span>
+      <span><i style="background:var(--up)"></i>foot lifted</span>
+    </div>
+  </div>
+
+  <div class="pad" data-slot="0">
+    <div class="name"></div><div class="state">foot down</div>
+    <div class="edge fwd">▲ forward</div>
+    <div class="track"></div><div class="fill"></div>
+    <div class="side l">‹</div><div class="side r">›</div>
+    <div class="coach">Hold and slide<br><b>sideways</b> to lift,<br><b>up/down</b> to swing.<br>Let go to put it down.</div>
+    <div class="foot"></div>
+    <div class="edge back">▼ back</div>
+  </div>
+  <div class="pad" data-slot="1">
+    <div class="name"></div><div class="state">foot down</div>
+    <div class="edge fwd">▲ forward</div>
+    <div class="track"></div><div class="fill"></div>
+    <div class="side l">‹</div><div class="side r">›</div>
+    <div class="coach">Hold and slide<br><b>sideways</b> to lift,<br><b>up/down</b> to swing.<br>Let go to put it down.</div>
+    <div class="foot"></div>
+    <div class="edge back">▼ back</div>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script>
+// Same roles and messages as software/two-player-controller/server.py. Keep them in sync.
+const ROLES = {
+  left:  { name:'LEFT',       legs:['FL','BL'], partner:'right', color:'a', sub:'left legs' },
+  right: { name:'RIGHT',      legs:['FR','BR'], partner:'left',  color:'b', sub:'right legs' },
+  front: { name:'FRONT',      legs:['FL','FR'], partner:'back',  color:'a', sub:'front legs' },
+  back:  { name:'BACK',       legs:['BL','BR'], partner:'front', color:'b', sub:'back legs' },
+  diag1: { name:'DIAGONAL 1', legs:['FL','BR'], partner:'diag2', color:'a', sub:'left front + right back', short:'DIAG 1' },
+  diag2: { name:'DIAGONAL 2', legs:['FR','BL'], partner:'diag1', color:'b', sub:'right front + left back', short:'DIAG 2' },
+};
+const SPLITS = [
+  { title:'Left / right',  note:'Time your steps with your partner.', roles:['left','right'] },
+  { title:'Front / back',  note:'Time your steps with your partner.', roles:['front','back'] },
+  { title:'Diagonal',      note:'Like a chameleon walks. Easiest to start with.', roles:['diag1','diag2'] },
+];
+const LEG_NAMES = { FL:'Left front', FR:'Right front', BL:'Left back', BR:'Right back' };
+const LIFTED = 0.3;   // same threshold the old page used for "foot is up"
+
+const $ = id => document.getElementById(id);
+const legs = { FL:{swing:0,lift:0}, FR:{swing:0,lift:0}, BL:{swing:0,lift:0}, BR:{swing:0,lift:0} };
+let role = null, ws = null, players = {}, connected = false;
+const dragging = {}, dirty = new Set();
+const mine = name => role && ROLES[role].legs.includes(name);
+const cssColor = c => c === 'a' ? 'var(--a)' : 'var(--b)';
+
+// ---------------------------------------------------------------- dog drawing
+// Top-down dog, head at the top. colorOf(name) gives each leg's colour.
+const HIP  = { FL:[58,62], FR:[102,62], BL:[58,140], BR:[102,140] };
+const FOOT = { FL:[24,62], FR:[136,62], BL:[24,140], BR:[136,140] };
+function dogSVG(state, colorOf, big) {
+  let s = '<path d="M80 168 q6 14 -2 20" stroke="#2f3542" stroke-width="5" fill="none" stroke-linecap="round"/>' +
+          '<rect x="54" y="40" width="52" height="132" rx="24" fill="#2f3542"/>' +
+          '<path d="M64 20 l-8 -12 l14 6 z M96 20 l8 -12 l-14 6 z" fill="#2f3542"/>' +
+          '<circle cx="80" cy="28" r="18" fill="#2f3542"/>' +
+          '<circle cx="73" cy="24" r="2.4" fill="#8d96a6"/><circle cx="87" cy="24" r="2.4" fill="#8d96a6"/>';
+  for (const name in HIP) {
+    const [hx, hy] = HIP[name], [fx, fy0] = FOOT[name], leg = state[name];
+    const fy = fy0 - leg.swing * 20;
+    const up = leg.lift > LIFTED;
+    const r = (big && mine(name) ? 11 : 9) + leg.lift * 4;
+    const col = up ? 'var(--up)' : colorOf(name);
+    if (up) s += `<circle cx="${fx}" cy="${fy}" r="${r + 6}" fill="var(--up)" opacity=".22"/>`;
+    s += `<line x1="${hx}" y1="${hy}" x2="${fx}" y2="${fy}" stroke="#454d5c" stroke-width="6" stroke-linecap="round"/>` +
+         `<circle cx="${fx}" cy="${fy}" r="${r}" fill="${col}"` +
+         (big && !mine(name) && !up ? ' opacity=".7"' : '') + '/>';
+  }
+  return s;
+}
+
+// ---------------------------------------------------------------- role picker
+function buildPicker() {
+  const flat = { FL:{swing:0,lift:0}, FR:{swing:0,lift:0}, BL:{swing:0,lift:0}, BR:{swing:0,lift:0} };
+  $('splits').innerHTML = SPLITS.map(sp => {
+    const [ra, rb] = sp.roles;
+    const svg = dogSVG(flat, n => ROLES[ra].legs.includes(n) ? 'var(--a)' : 'var(--b)', false);
+    const btn = r => `<button class="role ${ROLES[r].color}" data-role="${r}">${ROLES[r].name}` +
+                     `<small>${ROLES[r].sub}</small><span class="taken hidden"></span></button>`;
+    return `<div class="split"><svg viewBox="0 0 160 190" aria-hidden="true">${svg}</svg>` +
+           `<h2>${sp.title}<small>${sp.note}</small></h2><div class="pair">${btn(ra)}${btn(rb)}</div></div>`;
+  }).join('');
+  $('splits').style.cssText = 'display:flex;flex-direction:column;gap:12px';
+  document.querySelectorAll('.role').forEach(b => b.onclick = () => join(b.dataset.role));
+}
+function renderPicker() {
+  document.querySelectorAll('.role').forEach(b => {
+    const n = (players[b.dataset.role] || 0) - (b.dataset.role === role ? 1 : 0);
+    const tag = b.querySelector('.taken');
+    tag.classList.toggle('hidden', n <= 0);
+    tag.textContent = n === 1 ? '1 playing' : `${n} playing`;
+  });
+}
+
+// ---------------------------------------------------------------- connection
+function setConn(text, cls) {
+  for (const el of [$('conn'), $('info')]) { el.className = 'pill ' + cls; }
+  $('conn').textContent = text;
+}
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => {
+    connected = true; setConn('Connected', 'ok');
+    if (role) ws.send(JSON.stringify({type:'join', role}));
+    render();
+  };
+  ws.onclose = () => {
+    connected = false; setConn('Lost the laptop, retrying…', '');
+    $('info').textContent = 'Reconnecting…';
+    setTimeout(connect, 1000);
+  };
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type !== 'status') return;
+    players = msg.players;
+    for (const name in msg.legs) if (!mine(name) || !dragging[name]) legs[name] = msg.legs[name];
+    render();
+  };
+}
+
+// ---------------------------------------------------------------- joining
+function join(r) {
+  role = r;
+  const R = ROLES[r];
+  document.documentElement.style.setProperty('--side', cssColor(R.color));
+  document.documentElement.style.setProperty('--other', cssColor(R.color === 'a' ? 'b' : 'a'));
+  $('who').textContent = R.short || R.name;
+  document.querySelectorAll('.pad').forEach(pad =>
+    pad.querySelector('.name').textContent = LEG_NAMES[R.legs[pad.dataset.slot]]);
+  $('pick').classList.add('hidden');
+  $('play').classList.remove('hidden');
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({type:'join', role}));
+  keepAwake();
+  render();
+}
+$('switch').onclick = () => {
+  $('play').classList.add('hidden');
+  $('pick').classList.remove('hidden');
+  renderPicker();
+};
+$('reset').onclick = () => {
+  if (ws && ws.readyState === 1) { ws.send(JSON.stringify({type:'reset'})); toast('All four feet back to the middle'); buzz(20); }
+};
+
+// ---------------------------------------------------------------- pads
+// Relative drag, so touching a pad never makes the leg jump.
+document.querySelectorAll('.pad').forEach(pad => {
+  let start = null;
+  const name = () => ROLES[role].legs[pad.dataset.slot];
+  pad.addEventListener('pointerdown', e => {
+    if (!role) return;
+    pad.setPointerCapture(e.pointerId);
+    start = { x:e.clientX, y:e.clientY, swing:legs[name()].swing, leg:name(), up:false };
+    dragging[start.leg] = true;
+    pad.classList.add('active', 'used');
+  });
+  pad.addEventListener('pointermove', e => {
+    if (!start) return;
+    const r = pad.getBoundingClientRect();
+    const leg = legs[start.leg];
+    leg.swing = Math.max(-1, Math.min(1, start.swing + (start.y - e.clientY) / (r.height * 0.4)));
+    leg.lift = Math.min(1, Math.abs(e.clientX - start.x) / (r.width * 0.35));
+    const up = leg.lift > LIFTED;
+    if (up !== start.up) { start.up = up; buzz(up ? 12 : 8); }
+    dirty.add(start.leg); render();
+  });
+  const end = () => {
+    if (!start) return;
+    if (start.up) buzz(8);
+    dragging[start.leg] = false; legs[start.leg].lift = 0; dirty.add(start.leg);
+    start = null; pad.classList.remove('active'); render();
+  };
+  pad.addEventListener('pointerup', end);
+  pad.addEventListener('pointercancel', end);
+});
+
+// send at most ~20 times a second
+setInterval(() => {
+  if (!ws || ws.readyState !== 1) return;
+  for (const name of dirty) ws.send(JSON.stringify({type:'leg', leg:name, ...legs[name]}));
+  dirty.clear();
+}, 50);
+
+// ---------------------------------------------------------------- render
+function render() {
+  renderPicker();
+  if (!role) return;
+  const partner = ROLES[role].partner;
+  if (connected) {
+    const here = players[partner] > 0;
+    $('info').className = 'pill ' + (here ? 'ok' : 'wait');
+    $('info').textContent = here ? 'Partner is here' : 'Waiting for partner';
+    $('info').title = here ? `${ROLES[partner].name} player is here` : `Waiting for the ${ROLES[partner].name} player`;
+  }
+  document.querySelectorAll('.pad').forEach(pad => {
+    const leg = legs[ROLES[role].legs[pad.dataset.slot]];
+    const foot = pad.querySelector('.foot'), fill = pad.querySelector('.fill');
+    const top = 68, h = pad.clientHeight - 68 - 30;
+    const mid = top + h / 2, y = top + h * (1 - (leg.swing + 1) / 2);
+    foot.style.top = y + 'px';
+    foot.style.transform = `scale(${1 + leg.lift * 0.3})`;
+    fill.style.top = Math.min(mid, y) + 'px';
+    fill.style.height = Math.abs(mid - y) + 'px';
+    const up = leg.lift > LIFTED;
+    foot.classList.toggle('lifted', up);
+    pad.classList.toggle('lifted', up);
+    pad.querySelector('.state').textContent = up ? 'foot lifted' : 'foot down';
+  });
+  $('dog').innerHTML = dogSVG(legs, n => mine(n) ? 'var(--side)' : 'var(--other)', true);
+}
+
+// ---------------------------------------------------------------- little helpers
+function buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+let toastTimer;
+function toast(text) {
+  $('toast').textContent = text; $('toast').classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 1600);
+}
+// keep the phone screen on while playing (only works where the browser allows it)
+let wakeLock = null;
+async function keepAwake() {
+  try { if ('wakeLock' in navigator && !wakeLock) {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && role) keepAwake(); });
+window.addEventListener('resize', render);
+
+buildPicker();
+connect();
+</script>
+</body>
+</html>

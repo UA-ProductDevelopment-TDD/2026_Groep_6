@@ -41,3 +41,5 @@ Most team members are new to Git and use GitHub Desktop. Keep explanations simpl
   before pushing, and add or update tests in `app/tests/` for new behaviour.
 - When you change Bittle Studio, also update `software/bittle-studio/docs/developer-guide.md` if the change affects it.
 - Logic that exists in more than one place (firmware, Python, JavaScript) must stay in sync. Change every copy, or better, keep one source.
+- The phone page lives in `software/two-player-controller/static/index.html`. UI designs it there. After changing the page or server, run the test:
+  `python -m unittest discover -s tests` in `software/two-player-controller/`.

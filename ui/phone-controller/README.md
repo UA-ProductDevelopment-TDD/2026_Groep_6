@@ -24,7 +24,22 @@ python serve.py --dry-run
 `serve.py` starts the normal `server.py` but serves the page from this folder. It takes the same options:
 `--studio`, `--serial COM3`, `--ble`. Open the address it prints on the phones, just like in `software/INSTRUCTIES.md`.
 
+## Natural leg movement (experiment)
+
+`serve.py` also changes how the legs move. In `server.py` the knee (on the front legs: the elbow) only moves a little in a straight line with the shoulder.
+`serve.py` uses the knee curves from Bittle's own walking gait (`wkF` in `software/arduino/src/InstinctBittleESP.h`) instead:
+
+- **Foot on the floor:** the knee straightens at the front and the back of the step and bends a bit in the middle, so the foot stays on the floor.
+- **Foot lifted:** the knee folds most in the middle of the swing and reaches out again at the front to put the foot down.
+
+The numbers are in the `NATURAL` table and `EXTRA_LIFT` at the top of `serve.py`. To compare with the old movement, add `--old-legs`:
+
+```
+python serve.py --studio --old-legs
+```
+
 ## Using it for real
 
-When the team likes it, the software pair can copy `index.html` over `software/two-player-controller/static/index.html`.
+When the team likes it, the software pair can copy `index.html` over `software/two-player-controller/static/index.html`,
+and move `natural_leg_angles` (with its `NATURAL` table) into `server.py` as the new `leg_angles`. After that, `serve.py` isn't needed anymore.
 If someone changes the roles or messages in `server.py`, the `ROLES` list at the top of the script in `index.html` must change too.

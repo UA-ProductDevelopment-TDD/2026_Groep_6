@@ -650,6 +650,9 @@ int balanceSlope[2] = {1, 1};  // roll, pitch
 #ifdef NEOPIXEL_PIN
 #include "led.h"
 #endif
+#ifdef CHAMELEON_LED
+#include "chameleonLed.h"
+#endif
 #include "reaction.h"
 #include "qualityAssurance.h"
 
@@ -724,6 +727,9 @@ void initRobot() {
   }
 #ifdef NEOPIXEL_PIN
   ledSetup();
+#endif
+#ifdef CHAMELEON_LED
+  chameleonLedSetup();
 #endif
 #ifdef PWM_LED_PIN
   pinMode(PWM_LED_PIN, OUTPUT);

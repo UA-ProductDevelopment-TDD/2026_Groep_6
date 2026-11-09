@@ -27,6 +27,10 @@
 #define CAMERA                    // for Mu Vision camera
 #define QUICK_DEMO                // for quick demo
 // #define ROBOT_ARM                 // for attaching head clip arm
+#define CHAMELEON_LED             // our chameleon NeoPixel strip, colour set with the serial command "v" (see src/chameleonLed.h)
+#define CHAMELEON_LED_PIN 10       // GPIO wired to the strip's DIN. Grove UART2 port on BiBoard V1 = GPIO 9 and 10; test with "v pin 9"
+#define CHAMELEON_LED_COUNT 25      // number of LEDs on the strip
+#define CHAMELEON_LED_BRIGHTNESS 26 // 0-255, 26 = 10%
 #include "src/OpenCat.h"
 
 // Set Arduino loop task stack size to 16KB (default is 8KB) for debugging

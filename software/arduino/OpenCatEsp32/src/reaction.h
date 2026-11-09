@@ -1530,6 +1530,13 @@ void reaction() {  // Reminder:  reaction() is repeatedly called in the "forever
                                  // 10 4 0, 15 10 0 4 0:100>
           break;
         }
+#ifdef CHAMELEON_LED
+      case T_CHAMELEON:  // chameleon LED colour, e.g. "v 255 0 0" (see chameleonLed.h)
+        {
+          chameleonCommand(newCmd);
+          break;
+        }
+#endif
       default:
         {
           printToAllPorts("Undefined token!");

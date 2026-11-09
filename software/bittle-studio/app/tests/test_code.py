@@ -293,6 +293,38 @@ class CodeWorkbenchTest(unittest.TestCase):
         self.assertEqual(self.c.delete('/api/sensors/main/' + sensor['id']).status_code, 200)
         self.c.post('/api/robot-transform', json={'position': [0, 0, .2], 'rotation': [0, 0, 0]})
 
+    def test_10_floor_colour_camera(self):
+        self.c.post('/api/command', json={'action': 'reset'})
+        camera = self.c.post('/api/sensors', json={'target': 'main', 'type': 'color_camera', 'link': 'base-frame-link'})
+        self.assertEqual(camera.status_code, 200, camera.text)
+        camera = camera.json()
+        self.assertEqual(camera['name'], 'Floor camera')
+        self.assertEqual(len(camera['offset']), 3)
+        reading = self.c.get('/api/state').json()['sensors'][camera['id']]
+        self.assertEqual(reading['hex'], '#515557')  # the plain floor
+        self.assertGreater(reading['coverage'], .5)
+        tile = self.c.post('/api/objects', json={'type': 'box', 'name': 'Red tile', 'size': [.4, .4, .002],
+                                                 'position': [0, 0, .001], 'color': '#c0392b'})
+        self.assertEqual(tile.status_code, 200, tile.text)
+        reading = self.c.get('/api/state').json()['sensors'][camera['id']]
+        self.assertEqual(reading['color'], [192, 57, 43])
+        self.assertEqual(reading['led_hex'], '#FF1800')  # same conversion as the XIAO firmware
+        bad = self.c.post('/api/sensors', json={'target': 'main', 'type': 'color_camera', 'name': 'Far camera',
+                                                'link': 'base-frame-link', 'offset': [0, 3, 0]})
+        self.assertEqual(bad.status_code, 400)
+        self.save([{'id': 'cam', 'name': 'cam.py', 'target': 'main',
+                    'source': 'from bittle_sim import ctx\nc=ctx.get_floor_color()\nassert c["hex"] == "#C0392B", c\nprint("camera ok", c["hex"])'}])
+        self.assertEqual(self.c.post('/api/scripts/run', json={}).status_code, 200)
+        status = self.wait_finished()
+        self.assertEqual(status['jobs'][0]['status'], 'completed', status)
+        self.assertTrue(any('camera ok' in item['text'] for item in status['logs']))
+        project = self.c.get('/api/project').json()
+        saved = next(item for item in project['sensors'] if item['id'] == camera['id'])
+        self.assertEqual(saved['offset'], camera['offset'])
+        self.assertEqual(self.c.post('/api/project', json=project).status_code, 200)
+        self.assertEqual(self.c.delete('/api/sensors/main/' + camera['id']).status_code, 200)
+        self.c.delete('/api/objects/' + tile.json()['id'])
+
 
 if __name__=='__main__':
     unittest.main()

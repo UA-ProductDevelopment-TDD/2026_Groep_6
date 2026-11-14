@@ -54,6 +54,30 @@ def hex_rgb(color):
     return [int(color[i:i + 2], 16) for i in (0, 2, 4)]
 
 
+LED_NAMES = {'red': [255, 0, 0], 'orange': [255, 80, 0], 'yellow': [255, 200, 0], 'green': [0, 255, 0],
+             'cyan': [0, 255, 255], 'blue': [0, 0, 255], 'purple': [140, 0, 255], 'pink': [255, 40, 120],
+             'white': [255, 255, 255], 'off': [0, 0, 0], 'black': [0, 0, 0]}
+
+
+def led_command(text, current):
+    """The firmware's chameleon LED command (chameleonLed.h): "v 255 0 0", "v #FF0000", "v red", "v off".
+    Returns the LED colour the simulator shows afterwards: [r, g, b], or None to follow the floor camera again
+    ("v auto", Studio only). "v pin", "v count" and "v ?" change nothing in the simulator."""
+    arg = str(text).strip()[1:].strip()
+    if arg.lower() == 'auto':
+        return None
+    if arg == '' or arg.lower() in LED_NAMES:
+        return LED_NAMES[arg.lower() or 'off']
+    if arg.startswith('#'):
+        return hex_rgb(arg)
+    parts = arg.split()
+    if len(parts) == 3 and all(part.lstrip('-').isdigit() for part in parts):
+        return [max(0, min(255, int(part))) for part in parts]
+    if arg.startswith(('pin', 'count', '?')):
+        return current
+    raise ValueError('Use: v 255 0 0, v #FF0000, v red, v off or v auto')
+
+
 def vector(text, default=(0, 0, 0)):
     result = [float(x) for x in text.split()] if text else list(default)
     if len(result) != len(default) or not all(math.isfinite(x) for x in result):
@@ -740,7 +764,7 @@ class Simulation:
                 'time': self.clock, 'playhead': self.playhead, 'targets': self.targets,
                 'angles': {j['name']: math.degrees(p.getJointState(self.robot, j['id'], physicsClientId=self.client)[0]) for j in self.joints},
                 'height': pos[2], 'rpy': p.getEulerFromQuaternion(quat), 'contacts': len(contacts),
-                'sensors': self.sensor_readings()}
+                'sensors': self.sensor_readings(), 'leds': getattr(self, 'led_override', None)}
 
     def model(self):
         return {'joints': self.joints, 'visuals': self.visuals, 'warnings': self.warnings, 'xml': self.xml,

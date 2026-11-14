@@ -169,8 +169,10 @@ async function buildRobot() {
 }
 // Floor colour cameras (XIAO ESP32-S3 Sense) drawn on their link: the board, the lens and a cone showing what it sees.
 const cameraMarkers=new Map();
+// LED strips for the serial "v" command when the robot has no floor camera (which brings its own strips).
+let extraLeds=null;
 function addCameraMarkers(){
-  cameraMarkers.clear();
+  cameraMarkers.clear();extraLeds=null;
   const robots=[{id:'main',sensors:model.sensors},...(model.actors||[]).map(a=>({id:a.id,sensors:a.sensors}))];
   for(const r of robots)for(const s of r.sensors||[]){
     if(s.type!=='color_camera')continue;
@@ -186,7 +188,7 @@ function addCameraMarkers(){
     cone.geometry.rotateX(Math.PI/2);cone.position.z=-h/2;
     for(const m of [board,chip,lens])m.castShadow=true;
     cam.add(board,chip,lens,glass,cone);cam.userData.cone=cone;group.add(cam);cameraMarkers.set(s.id,cam);
-    cam.userData.leds=addLedStrips(r.id,s);
+    cam.userData.leds=addLedStrips(r.id,s);cam.userData.robot=r.id;
   }
 }
 // The chameleon LEDs linked to the camera: two strips of 4 NeoPixels on the top cover, lit in the camera's LED colour.
@@ -205,10 +207,16 @@ function addLedStrips(robotId,s){
 // Floor colour -> LED colour, the same conversion as the XIAO firmware and engine.py (used if the server sends none).
 function ledFromFloor(rgb){const c=new THREE.Color(rgb[0]/255,rgb[1]/255,rgb[2]/255);const max=Math.max(c.r,c.g,c.b),min=Math.min(c.r,c.g,c.b),d=max-min;let h=0;if(d)h=max===c.r?((c.g-c.b)/d+6)%6:max===c.g?(c.b-c.r)/d+2:(c.r-c.g)/d+4;const s=Math.min(1,(max?d/max:0)*1.6),v=Math.min(1,Math.max(0,(max-.06)/.39));const k=n=>{const m=(n+h)%6;return v-v*s*Math.max(0,Math.min(m,4-m,1));};return '#'+[k(5),k(3),k(1)].map(x=>Math.round(x*255).toString(16).padStart(2,'0')).join('').toUpperCase();}
 function ledHex(sensor){return sensor.led_hex||(sensor.color?ledFromFloor(sensor.color):null);}
-function updateCameraMarkers(s){const all=[...Object.values(s.sensors||{}),...Object.values(s.actors||{}).flatMap(a=>Object.values(a.sensors||{}))];for(const sensor of all){const cam=cameraMarkers.get(sensor.id);if(!cam)continue;if(sensor.hex)cam.userData.cone.material.color.set(sensor.hex);const led=ledHex(sensor);if(cam.userData.leds&&led)cam.userData.leds.target.set(led);}}
+function updateCameraMarkers(s){const all=[...Object.values(s.sensors||{}),...Object.values(s.actors||{}).flatMap(a=>Object.values(a.sensors||{}))];for(const sensor of all){const cam=cameraMarkers.get(sensor.id);if(!cam)continue;if(sensor.hex)cam.userData.cone.material.color.set(sensor.hex);const led=ledHex(sensor);if(cam.userData.leds&&led)cam.userData.leds.target.set(led);}
+  // A "v" command (Serial monitor, or a script through /api/skill) overrides the camera colour on the main robot until "v auto" or Reset.
+  if(s.leds){const hex='#'+s.leds.map(x=>x.toString(16).padStart(2,'0')).join('');let shown=false;
+    for(const cam of cameraMarkers.values())if(cam.userData.robot==='main'&&cam.userData.leds){cam.userData.leds.target.set(hex);shown=true;}
+    if(!shown){extraLeds??=addLedStrips('main',{link:robotFor('main')?.links?.[0]});extraLeds?.target.set(hex);}}
+  else extraLeds?.target.set('#000000');
+}
 // Fade the LEDs towards their colour, like the firmware's smoothing.
 let ledClock=performance.now();const LED_OFF=new THREE.Color('#2b2f33');
-function ledTick(){const now=performance.now(),k=1-Math.exp(-(now-ledClock)/250);ledClock=now;for(const cam of cameraMarkers.values()){const leds=cam.userData.leds;if(!leds)continue;leds.current.lerp(leds.target,k);const glow=(leds.current.r+leds.current.g+leds.current.b)/3;for(const m of leds.materials){m.color.copy(LED_OFF).lerp(leds.current,Math.min(1,glow*4));}for(const l of leds.lights){l.color.copy(leds.current);l.intensity=glow*.06;}}}
+function ledTick(){const now=performance.now(),k=1-Math.exp(-(now-ledClock)/250);ledClock=now;for(const leds of [...[...cameraMarkers.values()].map(cam=>cam.userData.leds),extraLeds]){if(!leds)continue;leds.current.lerp(leds.target,k);const glow=(leds.current.r+leds.current.g+leds.current.b)/3;for(const m of leds.materials){m.color.copy(LED_OFF).lerp(leds.current,Math.min(1,glow*4));}for(const l of leds.lights){l.color.copy(leds.current);l.intensity=glow*.06;}}}
 async function buildObjects() {
   gizmo.detach(); selectionBox.visible=false;
   for(const mesh of objectMeshes.values()) disposeGroup(mesh); objectMeshes.clear();

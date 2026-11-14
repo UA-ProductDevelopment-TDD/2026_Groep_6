@@ -18,6 +18,7 @@ const pairsText = list => {
 // Plain-language meaning of an OpenCat command (OpenCatEsp32 OpenCat.h token list).
 export function explainCommand(text) {
   const t = String(text).trim();
+  if (/^v(\s|#|$)/.test(t)) return t === 'v' || /^v\s+off$/i.test(t) ? 'chameleon LEDs off' : `chameleon LEDs: ${t.slice(1).trim()}`;
   if (t.startsWith('K upload')) return 'upload a custom skill (binary K packet); the robot runs it and keeps it for T';
   if (/^I · \d+ joints$/.test(t)) return `move ${t.match(/\d+/)[0]} joints at once (binary I packet)`;
   if (/^k\w+/.test(t)) {

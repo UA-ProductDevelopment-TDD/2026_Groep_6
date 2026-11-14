@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from engine import ASSETS, DATA, ROOT, SAVED_MOTIONS, Simulation, asset_path, asset_url, upgrade_bundled_robot, url_path, vector
+from engine import ASSETS, DATA, ROOT, SAVED_MOTIONS, Simulation, asset_path, asset_url, led_command, upgrade_bundled_robot, url_path, vector
 from motion_export import build_motion, firmware_skill, python_motion, python_script, sequence_samples
 from scripting import ScriptRunner, validate_scripts
 import skills
@@ -181,6 +181,7 @@ def command(body: dict):
             sim.running = bool(body['value'])
         elif action == 'reset':
             sim.reset()
+            sim.led_override = None  # the LEDs follow the floor camera again
         elif action == 'pose':
             robot.pose(body['pose'])
         elif action == 'seek':
@@ -496,6 +497,9 @@ def simulate_skill(body: dict):
                 robot.frames = original
             plan = skills.motion_plan(item['name'], poses, step, item['motion_type'] == 'gait')
             robot.last_custom_plan = plan  # replayed by T, like the firmware's last uploaded skill
+        elif str(body.get('command', '')).strip().startswith('v'):  # chameleon LEDs (chameleonLed.h in the firmware)
+            sim.led_override = led_command(body['command'], getattr(sim, 'led_override', None))
+            return {'simulated': True, 'name': 'LED colour', 'leds': sim.led_override}
         elif str(body.get('command', '')).strip() == 'T':
             plan = getattr(robot, 'last_custom_plan', None)
         else:

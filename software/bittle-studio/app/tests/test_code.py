@@ -325,6 +325,21 @@ class CodeWorkbenchTest(unittest.TestCase):
         self.assertEqual(self.c.delete('/api/sensors/main/' + camera['id']).status_code, 200)
         self.c.delete('/api/objects/' + tile.json()['id'])
 
+    def test_11_chameleon_led_command(self):
+        self.c.post('/api/command', json={'action': 'reset'})
+        self.assertIsNone(self.c.get('/api/state').json()['leds'])
+        for command, rgb in [('v 255 0 0', [255, 0, 0]), ('v #00FF00', [0, 255, 0]), ('v blue', [0, 0, 255]),
+                             ('v pin 9', [0, 0, 255]), ('v off', [0, 0, 0])]:
+            result = self.c.post('/api/skill', json={'command': command})
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertEqual(self.c.get('/api/state').json()['leds'], rgb, command)
+        self.assertEqual(self.c.post('/api/skill', json={'command': 'v banana'}).status_code, 400)
+        self.c.post('/api/skill', json={'command': 'v auto'})
+        self.assertIsNone(self.c.get('/api/state').json()['leds'])
+        self.c.post('/api/skill', json={'command': 'v red'})
+        self.c.post('/api/command', json={'action': 'reset'})
+        self.assertIsNone(self.c.get('/api/state').json()['leds'])
+
 
 if __name__=='__main__':
     unittest.main()

@@ -86,6 +86,8 @@ export function initHardware({api, toast, getModel, getMapping, refresh}) {
   // Unified control: the console, library and sliders drive the simulator, and the robot too when connected.
   let sequenceEpoch = 0;
   const simulate = body => api('/api/skill', body).catch(error => { toast(error.message, true); return {simulated: false}; });
+  // Chameleon LED commands typed while a robot is connected only go to the robot; show them on the virtual LEDs too.
+  link.addEventListener('tx', ({detail}) => { if (!detail.binary && /^v(\s|#|$)/.test(String(detail.text).trim())) simulate({command: detail.text}); });
   const controlStatus = () => ({...link.status(), connected: true, robot: link.connected});
   const both = (command, origin = '') => Promise.all([simulate({command}), robot()?.press(command, origin)]);
   const control = Object.assign(new EventTarget(), {

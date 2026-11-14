@@ -33,14 +33,20 @@ PHOTO_TYPES = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp'}
 
 
 def dominant_colour(path, groups=8):
-    """Most common colour in the middle of the photo: group similar colours into `groups` clusters and return the biggest cluster's colour."""
+    """Most common colour in the middle of the photo file."""
     with Image.open(path) as img:
-        img = img.convert('RGB')
-        w, h = img.size
-        dx, dy = round(w * (1 - CENTER_FRACTION) / 2), round(h * (1 - CENTER_FRACTION) / 2)
-        img = img.crop((dx, dy, w - dx, h - dy))  # only the middle of the photo
-        img.thumbnail((200, 200))
-        small = img.quantize(colors=groups, method=Image.Quantize.MEDIANCUT)
+        return dominant_colour_of(img, groups)
+
+
+def dominant_colour_of(img, groups=8):
+    """Most common colour in the middle of a PIL image: group similar colours into `groups` clusters and return the
+    biggest cluster's colour. Also used by webcam_to_leds.py."""
+    img = img.convert('RGB')
+    w, h = img.size
+    dx, dy = round(w * (1 - CENTER_FRACTION) / 2), round(h * (1 - CENTER_FRACTION) / 2)
+    img = img.crop((dx, dy, w - dx, h - dy))  # only the middle of the photo
+    img.thumbnail((200, 200))
+    small = img.quantize(colors=groups, method=Image.Quantize.MEDIANCUT)
     palette = small.getpalette()
     count, index = max(small.getcolors())
     return tuple(palette[3 * index:3 * index + 3])

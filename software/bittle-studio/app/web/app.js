@@ -209,9 +209,10 @@ function ledFromFloor(rgb){const c=new THREE.Color(rgb[0]/255,rgb[1]/255,rgb[2]/
 function ledHex(sensor){return sensor.led_hex||(sensor.color?ledFromFloor(sensor.color):null);}
 function updateCameraMarkers(s){const all=[...Object.values(s.sensors||{}),...Object.values(s.actors||{}).flatMap(a=>Object.values(a.sensors||{}))];for(const sensor of all){const cam=cameraMarkers.get(sensor.id);if(!cam)continue;if(sensor.hex)cam.userData.cone.material.color.set(sensor.hex);const led=ledHex(sensor);if(cam.userData.leds&&led)cam.userData.leds.target.set(led);}
   // A "v" command (Serial monitor, or a script through /api/skill) overrides the camera colour on the main robot until "v auto" or Reset.
-  if(s.leds){const hex='#'+s.leds.map(x=>x.toString(16).padStart(2,'0')).join('');let shown=false;
-    for(const cam of cameraMarkers.values())if(cam.userData.robot==='main'&&cam.userData.leds){cam.userData.leds.target.set(hex);shown=true;}
-    if(!shown){extraLeds??=addLedStrips('main',{link:robotFor('main')?.links?.[0]});extraLeds?.target.set(hex);}}
+  // The values are PWM duty cycles, i.e. linear light like a real NeoPixel, so they are not decoded as sRGB (that would turn orange into red).
+  if(s.leds){const [r,g,b]=s.leds.map(x=>x/255);let shown=false;
+    for(const cam of cameraMarkers.values())if(cam.userData.robot==='main'&&cam.userData.leds){cam.userData.leds.target.setRGB(r,g,b);shown=true;}
+    if(!shown){extraLeds??=addLedStrips('main',{link:robotFor('main')?.links?.[0]});extraLeds?.target.setRGB(r,g,b);}}
   else extraLeds?.target.set('#000000');
 }
 // Fade the LEDs towards their colour, like the firmware's smoothing.

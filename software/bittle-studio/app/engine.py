@@ -1,4 +1,5 @@
 """Local, single-session Bullet simulation. SI units; Z is up."""
+import colorsys
 import hashlib
 import math
 import threading
@@ -23,6 +24,34 @@ DATA.mkdir(exist_ok=True)
 SAVED_MOTIONS.mkdir(exist_ok=True)
 # Saved projects store these URL prefixes, so they stay fixed even when folders move on disk.
 URL_ROOTS = {'assets': ASSETS, 'data': DATA}
+
+# Sensors that can be attached to a robot link, with their default names.
+SENSOR_TYPES = {'imu': 'Body IMU', 'color_camera': 'Floor camera'}
+# Floor colour camera (Seeed XIAO ESP32-S3 Sense): under Bittle's chest, lens pointing down.
+# Offset is in the link frame (metres); Bittle's head is towards +Y.
+DEFAULT_CAMERA_OFFSET = {'base-frame-link': [0., .056, -.019]}
+CAMERA_FOV_DEG = 60.            # field of view the colour average is taken over (OV2640 lens is about 66°)
+CAMERA_RAYS = 9                 # 9 x 9 sample rays over that field of view
+CAMERA_RANGE = 1.               # metres; surfaces further away are not seen
+FLOOR_COLOR = '#515557'         # the ground plane colour drawn in the viewport
+# The chameleon LEDs get the floor colour the same way the XIAO firmware does it (floorToLed in xiao-color-camera.ino).
+LED_SATURATION_BOOST = 1.6
+LED_DARK_LEVEL, LED_FULL_LEVEL = .06, .45
+
+
+def led_rgb(color):
+    """Floor colour -> LED colour: more saturated, and brightness stretched so a dull floor still lights the LEDs."""
+    h, s, v = colorsys.rgb_to_hsv(*(c / 255 for c in color))
+    s = min(1., s * LED_SATURATION_BOOST)
+    v = min(1., max(0., (v - LED_DARK_LEVEL) / (LED_FULL_LEVEL - LED_DARK_LEVEL)))
+    return [round(c * 255) for c in colorsys.hsv_to_rgb(h, s, v)]
+
+
+def hex_rgb(color):
+    color = str(color).lstrip('#')
+    if len(color) != 6:
+        raise ValueError('Colours must look like #RRGGBB')
+    return [int(color[i:i + 2], 16) for i in (0, 2, 4)]
 
 
 def vector(text, default=(0, 0, 0)):
@@ -174,6 +203,7 @@ class Simulation:
         self.speed = 1.
         self.mapping = {}
         self.closed = False
+        self.color_source = self if client is None else None  # who knows the scene's surface colours (main sim)
         if client is None:
             p.setGravity(0, 0, self.gravity, physicsClientId=self.client)
             p.setTimeStep(1 / self.physics_hz, physicsClientId=self.client)
@@ -326,18 +356,28 @@ class Simulation:
 
     def add_sensor(self, definition):
         sensor_type = str(definition.get('type', 'imu')).lower()
-        if sensor_type != 'imu':
-            raise ValueError('The supported sensor type is IMU')
+        sensor_type = 'color_camera' if sensor_type == 'camera' else sensor_type
+        if sensor_type not in SENSOR_TYPES:
+            raise ValueError('Supported sensor types are IMU and floor colour camera')
         link = str(definition.get('link') or next(iter(self.links)))
         if link not in self.links:
             raise ValueError('Sensor link is not part of this robot: ' + link)
         sensor_id = str(definition.get('id') or uuid.uuid4().hex)[:64]
         if any(item['id'] == sensor_id for item in self.sensors):
             raise ValueError('Duplicate sensor ID')
-        name = str(definition.get('name') or 'Body IMU').strip()[:80]
+        name = str(definition.get('name') or SENSOR_TYPES[sensor_type]).strip()[:80]
         if not name or any(item['name'] == name for item in self.sensors):
             raise ValueError('Sensor names must be unique on a robot')
         sensor = {'id': sensor_id, 'name': name, 'type': sensor_type, 'link': link}
+        if sensor_type == 'color_camera':
+            offset = definition.get('offset', DEFAULT_CAMERA_OFFSET.get(link, [0., 0., 0.]))
+            try:
+                offset = [float(value) for value in offset]
+            except (TypeError, ValueError):
+                offset = []
+            if len(offset) != 3 or not all(math.isfinite(value) and abs(value) <= 1 for value in offset):
+                raise ValueError('Camera offset must be three numbers in metres, each between -1 and 1')
+            sensor['offset'] = offset
         self.sensors.append(sensor)
         self.update_sensors(None)
         return sensor
@@ -349,6 +389,62 @@ class Simulation:
         self.sensors.remove(sensor)
         self.sensor_values.pop(sensor_id, None)
         self._sensor_velocities.pop(sensor_id, None)
+
+    def _link_frame(self, link):
+        """Position and rotation of a link's URDF frame (the base reports its centre of mass otherwise)."""
+        index = self.links[link]
+        if index < 0:
+            pos, quat = p.getBasePositionAndOrientation(self.robot, physicsClientId=self.client)
+            dyn = p.getDynamicsInfo(self.robot, -1, physicsClientId=self.client)
+            return p.multiplyTransforms(pos, quat, *p.invertTransform(dyn[3], dyn[4]))
+        state = p.getLinkState(self.robot, index, computeForwardKinematics=1, physicsClientId=self.client)
+        return state[4], state[5]
+
+    def surface_rgb(self, body):
+        """Colour of a body a camera ray hit; None for robots, so the camera ignores the dog's own legs."""
+        if body == getattr(self, 'ground', None):
+            return hex_rgb(FLOOR_COLOR)
+        for obj in self.objects:
+            if obj['body'] == body:
+                try:
+                    return hex_rgb(obj['color'])
+                except ValueError:
+                    return hex_rgb('#74909d')
+        return None
+
+    def _camera_reading(self, sensor):
+        """Average surface colour in the camera's view: a grid of rays from the lens along the link's -Z axis."""
+        position, quaternion = self._link_frame(sensor['link'])
+        eye = list(p.multiplyTransforms(position, quaternion, sensor['offset'], [0, 0, 0, 1])[0])
+        half = math.tan(math.radians(CAMERA_FOV_DEG) / 2)
+        ends = []
+        for i in range(CAMERA_RAYS):
+            for j in range(CAMERA_RAYS):
+                u = (2 * (i + .5) / CAMERA_RAYS - 1) * half
+                v = (2 * (j + .5) / CAMERA_RAYS - 1) * half
+                direction = p.rotateVector(quaternion, [u, v, -1])
+                length = math.sqrt(sum(c * c for c in direction))
+                ends.append([eye[k] + direction[k] / length * CAMERA_RANGE for k in range(3)])
+        hits = p.rayTestBatch([eye] * len(ends), ends, physicsClientId=self.client)
+        source = self.color_source or self
+        colors, distances = [], []
+        for hit in hits:
+            rgb = source.surface_rgb(hit[0]) if hit[0] >= 0 else None
+            if rgb is not None:
+                colors.append(rgb)
+                distances.append(hit[2] * CAMERA_RANGE)
+        previous = self.sensor_values.get(sensor['id'], {})
+        if colors:
+            color = [round(sum(c[k] for c in colors) / len(colors)) for k in range(3)]
+            distance = sum(distances) / len(distances)
+        else:  # nothing but the robot itself (or the sky) in view: keep the last colour
+            color, distance = previous.get('color'), None
+        led = led_rgb(color) if color else None
+        return {**sensor, 'position': eye, 'orientation': list(p.getEulerFromQuaternion(quaternion)),
+                'quaternion': list(quaternion), 'color': color,
+                'hex': '#%02X%02X%02X' % tuple(color) if color else None,
+                'led': led, 'led_hex': '#%02X%02X%02X' % tuple(led) if led else None,
+                'coverage': len(colors) / len(hits), 'distance': distance}
 
     def _link_motion(self, link):
         index = self.links[link]
@@ -364,6 +460,9 @@ class Simulation:
 
     def update_sensors(self, dt):
         for sensor in self.sensors:
+            if sensor['type'] == 'color_camera':
+                self.sensor_values[sensor['id']] = self._camera_reading(sensor)
+                continue
             position, quaternion, linear, angular, inverse = self._link_motion(sensor['link'])
             previous = self._sensor_velocities.get(sensor['id'])
             acceleration = [0., 0., 0.] if not dt or previous is None else [
@@ -555,6 +654,7 @@ class Simulation:
         actor = Simulation(self.client, upgrade_bundled_robot(definition['xml'], directory), directory, bool(definition.get('fixed', False)))
         try:
             actor.actor_id = actor_id
+            actor.color_source = self
             actor.actor_name = str(definition.get('name', 'Robot'))[:100]
             actor.home_position, actor.home_rotation = position, rotation
             p.resetBasePositionAndOrientation(actor.robot, position, p.getQuaternionFromEuler(rotation), physicsClientId=self.client)

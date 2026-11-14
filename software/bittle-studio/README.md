@@ -72,7 +72,8 @@ Before the first real run, check each joint in **Servo setup** (see [Connect the
 - **＋ Box**, **◩ Ramp**, **＋ Sphere** and **▥ Steps** add obstacles. Select one to change its size, mass and friction.
 - Select Bittle, then **↔ Move XYZ** or **⟳ Rotate XYZ**, to place it where Reset starts. Pause physics first. **Reset placement** puts it back in the middle.
 - **Create & import** brings in your own robot (a ZIP with a URDF or Xacro file and its meshes) or environment meshes (OBJ, STL or GLB, in metres, Z up), or adds a copy of Bittle.
-- **Edit robot** opens the Robot Editor: the robot's structure, its **Sensors** (add an IMU / gyro to a link) and its **URDF source**.
+- **Edit robot** opens the Robot Editor: the robot's structure, its **Sensors** (add an IMU / gyro, or a floor colour camera, to a link) and its **URDF source**.
+- **Floor colour camera and LEDs**: **Edit robot → Sensors → ＋ Add floor colour camera** puts the XIAO ESP32-S3 Sense camera under Bittle's chest, looking down, and two strips of 4 LEDs on its back. A cone under the dog shows what the camera sees, in the colour it measures; the LEDs fade to that colour, made brighter and more vivid the same way the real camera's firmware does it. The sensor card shows both colours as #hex. **▦ Floor tile** (in **Create & import**) adds a flat coloured tile; select it and pick a **Surface colour** to change it at once, even while Bittle stands on it. In Python: `ctx.get_floor_color()` (`hex` = floor, `led_hex` = LEDs).
 - **Save project** downloads the whole experiment as one file; **Open project** restores it. The Studio also saves your work by itself and restores it at the next start.
 
 ### Control the robot

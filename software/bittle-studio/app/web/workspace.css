@@ -52,6 +52,8 @@
 .sensor-card {margin:0!important}
 .sensor-card header>div small {margin-top:2px}
 .sensor-readout {padding:9px;background:#0d151c;border-radius:3px;color:#c8dbb3!important}
+.sensor-add {display:flex;flex-direction:column;gap:6px}
+.sensor-swatch {display:inline-block;width:14px;height:14px;margin-right:8px;vertical-align:-3px;border-radius:3px;border:1px solid #ffffff40}
 #editorUrdf {width:100%;height:calc(100% - 105px);min-height:330px;resize:none;margin:14px 0 8px;font:11px/1.5 Consolas,monospace;white-space:pre}
 #editorDiagnostics p {margin-top:8px;color:#e8c07b;font-size:11px}
 @media(max-width:850px){.editor-dialog{height:94vh}.editor-layout{grid-template-columns:1fr;height:calc(100% - 115px)}.editor-nav{display:flex;border-right:0;border-bottom:1px solid var(--line);padding:5px}.editor-nav button{width:auto}.editor-content{min-height:0}.structure-columns,.sensor-builder{grid-template-columns:1fr}.robot-stats{display:none}}

@@ -45,7 +45,11 @@ class Context:
         return rpc('sensor', name=name)
 
     def get_imu(self, name=None):
-        return self.get_sensor(name)
+        return rpc('sensor', name=name, type='imu')
+
+    def get_floor_color(self, name=None):
+        """The floor colour camera's reading: {'color': [r, g, b], 'hex': '#RRGGBB', 'coverage': ..., ...}."""
+        return rpc('sensor', name=name, type='color_camera')
 
     def set_position(self, position, rotation=None):
         return rpc('position', position=position, rotation=rotation)

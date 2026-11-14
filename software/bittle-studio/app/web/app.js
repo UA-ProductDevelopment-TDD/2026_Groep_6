@@ -163,9 +163,52 @@ async function buildRobot() {
     if(v.color) color=new THREE.Color(...v.color.slice(0,3));
     materialize(mesh,color);mesh.position.fromArray(v.position);mesh.quaternion.fromArray(v.quaternion);group.add(mesh);
   }));
+  addCameraMarkers();
   $('bodyCount').textContent=model.visuals.length;$('jointCount').textContent=model.joints.length;
   renderActors();
 }
+// Floor colour cameras (XIAO ESP32-S3 Sense) drawn on their link: the board, the lens and a cone showing what it sees.
+const cameraMarkers=new Map();
+function addCameraMarkers(){
+  cameraMarkers.clear();
+  const robots=[{id:'main',sensors:model.sensors},...(model.actors||[]).map(a=>({id:a.id,sensors:a.sensors}))];
+  for(const r of robots)for(const s of r.sensors||[]){
+    if(s.type!=='color_camera')continue;
+    const key=r.id==='main'?s.link:r.id+'/'+s.link;
+    let group=robotLinks.get(key);
+    if(!group){group=new THREE.Group();group.userData.robot=true;group.userData.actor=r.id;scene.add(group);robotLinks.set(key,group);}
+    const cam=new THREE.Group();cam.position.fromArray(s.offset||[0,0,0]);
+    const board=new THREE.Mesh(new THREE.BoxGeometry(.0175,.021,.008),new THREE.MeshStandardMaterial({color:'#1f6f55',roughness:.55,metalness:.1}));board.position.z=.0055;
+    const chip=new THREE.Mesh(new THREE.BoxGeometry(.011,.011,.0025),new THREE.MeshStandardMaterial({color:'#c9cdd1',roughness:.3,metalness:.7}));chip.position.set(0,-.003,.0105);
+    const lens=new THREE.Mesh(new THREE.CylinderGeometry(.0035,.0035,.003,24),new THREE.MeshStandardMaterial({color:'#111418',roughness:.2}));lens.geometry.rotateX(Math.PI/2);lens.position.z=.0015;
+    const glass=new THREE.Mesh(new THREE.CircleGeometry(.0022,24),new THREE.MeshStandardMaterial({color:'#2a4a7a',roughness:.05,metalness:.6}));glass.rotation.x=Math.PI;glass.position.z=-.0001;
+    const h=.06,cone=new THREE.Mesh(new THREE.ConeGeometry(Math.tan(Math.PI/6)*h,h,32,1,true),new THREE.MeshBasicMaterial({color:s.hex||'#ffffff',transparent:true,opacity:.22,depthWrite:false,side:THREE.DoubleSide}));
+    cone.geometry.rotateX(Math.PI/2);cone.position.z=-h/2;
+    for(const m of [board,chip,lens])m.castShadow=true;
+    cam.add(board,chip,lens,glass,cone);cam.userData.cone=cone;group.add(cam);cameraMarkers.set(s.id,cam);
+    cam.userData.leds=addLedStrips(r.id,s);
+  }
+}
+// The chameleon LEDs linked to the camera: two strips of 4 NeoPixels on the top cover, lit in the camera's LED colour.
+const LED_ROWS=[-.021,.021],LED_STEPS=[-.024,-.008,.008,.024],LED_Z=.0105;
+function addLedStrips(robotId,s){
+  const linkName=(robotFor(robotId)?.links||[]).includes('cover-link')?'cover-link':s.link;
+  const key=robotId==='main'?linkName:robotId+'/'+linkName;const group=robotLinks.get(key);if(!group)return null;
+  const strip=new THREE.Group(),materials=[],lights=[];
+  for(const x of LED_ROWS){
+    const backing=new THREE.Mesh(new THREE.BoxGeometry(.008,.064,.0012),new THREE.MeshStandardMaterial({color:'#15191c',roughness:.7}));backing.position.set(x,0,LED_Z-.0012);strip.add(backing);
+    for(const y of LED_STEPS){const led=new THREE.Mesh(new THREE.BoxGeometry(.005,.005,.0016),new THREE.MeshBasicMaterial({color:'#2b2f33',toneMapped:false}));led.position.set(x,y,LED_Z);strip.add(led);materials.push(led.material);}
+    const light=new THREE.PointLight('#ffffff',0,.35,2);light.position.set(x*1.6,0,LED_Z+.01);strip.add(light);lights.push(light);
+  }
+  group.add(strip);return {strip,materials,lights,current:new THREE.Color(0,0,0),target:new THREE.Color(0,0,0)};
+}
+// Floor colour -> LED colour, the same conversion as the XIAO firmware and engine.py (used if the server sends none).
+function ledFromFloor(rgb){const c=new THREE.Color(rgb[0]/255,rgb[1]/255,rgb[2]/255);const max=Math.max(c.r,c.g,c.b),min=Math.min(c.r,c.g,c.b),d=max-min;let h=0;if(d)h=max===c.r?((c.g-c.b)/d+6)%6:max===c.g?(c.b-c.r)/d+2:(c.r-c.g)/d+4;const s=Math.min(1,(max?d/max:0)*1.6),v=Math.min(1,Math.max(0,(max-.06)/.39));const k=n=>{const m=(n+h)%6;return v-v*s*Math.max(0,Math.min(m,4-m,1));};return '#'+[k(5),k(3),k(1)].map(x=>Math.round(x*255).toString(16).padStart(2,'0')).join('').toUpperCase();}
+function ledHex(sensor){return sensor.led_hex||(sensor.color?ledFromFloor(sensor.color):null);}
+function updateCameraMarkers(s){const all=[...Object.values(s.sensors||{}),...Object.values(s.actors||{}).flatMap(a=>Object.values(a.sensors||{}))];for(const sensor of all){const cam=cameraMarkers.get(sensor.id);if(!cam)continue;if(sensor.hex)cam.userData.cone.material.color.set(sensor.hex);const led=ledHex(sensor);if(cam.userData.leds&&led)cam.userData.leds.target.set(led);}}
+// Fade the LEDs towards their colour, like the firmware's smoothing.
+let ledClock=performance.now();const LED_OFF=new THREE.Color('#2b2f33');
+function ledTick(){const now=performance.now(),k=1-Math.exp(-(now-ledClock)/250);ledClock=now;for(const cam of cameraMarkers.values()){const leds=cam.userData.leds;if(!leds)continue;leds.current.lerp(leds.target,k);const glow=(leds.current.r+leds.current.g+leds.current.b)/3;for(const m of leds.materials){m.color.copy(LED_OFF).lerp(leds.current,Math.min(1,glow*4));}for(const l of leds.lights){l.color.copy(leds.current);l.intensity=glow*.06;}}}
 async function buildObjects() {
   gizmo.detach(); selectionBox.visible=false;
   for(const mesh of objectMeshes.values()) disposeGroup(mesh); objectMeshes.clear();
@@ -194,7 +237,7 @@ function selectObject(id) {
   $('objMass').value=obj.mass;$('objFriction').value=obj.friction;$('objColor').value=obj.color;
   const mesh=objectMeshes.get(id);if(!state?.running)gizmo.attach(mesh);selectionBox.setFromObject(mesh);selectionBox.visible=true;renderObjectList();
 }
-for(const kind of ['position','rotation','size']) for(let i=0;i<3;i++) {const l=document.createElement('label');l.textContent=['X','Y','Z'][i];const input=document.createElement('input');input.id=kind+i;input.type='number';input.step=kind==='rotation'?'1':'.01';input.required=true;if(kind==='size')input.min='.000001';l.append(input);$(kind+'Fields').append(l);}
+for(const kind of ['position','rotation','size']) for(let i=0;i<3;i++) {const l=document.createElement('label');l.textContent=['X','Y','Z'][i];const input=document.createElement('input');input.id=kind+i;input.type='number';input.step='any';input.required=true;if(kind==='size')input.min='.000001';l.append(input);$(kind+'Fields').append(l);}
 function syncRobotFields(){const p=robotHandle.position,r=robotHandle.rotation;[p.x,p.y,p.z].forEach((v,i)=>$('robotPosition'+i).value=v.toFixed(4));[r.x,r.y,r.z].forEach((v,i)=>$('robotRotation'+i).value=THREE.MathUtils.radToDeg(v).toFixed(2));}
 function selectMainRobot(){selectedActor=null;selected=null;mainSelected=true;gizmoTarget='robot';gizmo.detach();selectionBox.visible=false;setTimelineTarget('main');tab('pose');$('selectRobot').classList.add('selected');$('inspectorTitle').textContent='Robot control';$('selectionLabel').textContent='BITTLE';renderObjectList();if(!state?.running)gizmo.attach(robotHandle);syncRobotFields();}
 on('selectRobot',selectMainRobot);
@@ -227,7 +270,7 @@ function followTick(){if(!followRobot)return;let n=0;followCenter.set(0,0,0);for
 // Fullscreen: the 3D view fills the screen; Esc (or the button) leaves. The ResizeObserver resizes the renderer.
 on('fullscreen',()=>{if(document.fullscreenElement)document.exitFullscreen();else $('viewport').requestFullscreen?.();});
 document.addEventListener('fullscreenchange',()=>$('fullscreen').setAttribute('aria-pressed',String(!!document.fullscreenElement)));
-function render() {requestAnimationFrame(render);followTick();controls.update();if(selected&&selectionBox.visible)selectionBox.update();renderer.render(scene,camera);} render();
+function render() {requestAnimationFrame(render);followTick();ledTick();controls.update();if(selected&&selectionBox.visible)selectionBox.update();renderer.render(scene,camera);} render();
 
 // Mirror simulator joint changes to the connected robot through Servo setup (servo = direction × angle + offset).
 function mirrorPose(pose){if(timelineTarget!=='main'||!window.bittleHardware?.status().connected)return;const map=Object.keys(mapping).length?mapping:timelineModel().mapping;const entries=Object.entries(pose).flatMap(([name,value])=>{const m=map[name];return m&&Number.isInteger(m.servo)&&m.servo>=0&&m.servo<=15?[[m.servo,Math.round(m.sign*value+Number(m.offset||0))]]:[];});if(entries.length)window.bittleHardware.mirrorServos(entries);}
@@ -261,9 +304,16 @@ on('applyPhysics',async()=>{await command('settings',{gravity:Number($('gravity'
 
 async function addObject(obj){const added=await api('/api/objects',obj);model.objects.push(added);await buildObjects();selectObject(added.id);return added;}
 on('addBox',()=>addObject({type:'box',name:'Test block',position:[.22,0,.025],size:[.12,.12,.05],color:'#849bab'}));
+// A flat coloured floor tile for the floor colour camera; each new one goes next to the last and gets the next colour.
+const TILE_COLORS=['#2e9e5b','#2f6fd0','#c0392b','#e0b020','#8e44ad','#e67e22'];
+on('addTile',()=>{const tiles=model.objects.filter(o=>o.name.startsWith('Floor tile'));const n=tiles.length;return addObject({type:'box',name:'Floor tile '+(n+1),position:[0,.32*n,.001],size:[.3,.3,.002],mass:0,color:TILE_COLORS[n%TILE_COLORS.length]});});
 on('addSphere',()=>addObject({type:'sphere',name:'Ball',position:[.22,0,.12],size:[.07,.07,.07],mass:.1,color:'#d89f66'}));
 on('addRamp',()=>addObject({type:'box',name:'Ramp · 15°',position:[.28,0,.045],rotation:[0,-Math.PI/12,0],size:[.32,.22,.018],color:'#799b9a'}));
 on('addSteps',async()=>{for(let i=0;i<3;i++)await addObject({type:'box',name:'Step '+(i+1),position:[.23+i*.11,0,(i+1)*.0125],size:[.11,.25,(i+1)*.025],color:['#667d8d','#7a929f','#95aab4'][i]});toast('Three 2.5 cm steps added.');});
+// Picking a surface colour applies it at once, so a floor tile can be recoloured while Bittle stands on it.
+let colorBusy=false,colorPending=false;
+async function applyObjectColor(){if(colorBusy){colorPending=true;return;}colorBusy=true;try{do{colorPending=false;const old=model.objects.find(o=>o.id===selected);if(!old)return;const updated=await api('/api/objects',{...old,color:$('objColor').value});model.objects[model.objects.indexOf(old)]=updated;objectMeshes.get(updated.id)?.traverse(c=>{if(c.isMesh)c.material.color.set(updated.color);});}while(colorPending);}finally{colorBusy=false;}}
+on('objColor',applyObjectColor,'input');
 on('objectForm',async e=>{e.preventDefault();const old=model.objects.find(o=>o.id===selected);const obj={...old,name:$('objName').value,mass:Number($('objMass').value),friction:Number($('objFriction').value),color:$('objColor').value};for(const kind of ['position','rotation','size'])obj[kind]=[0,1,2].map(i=>Number($(kind+i).value)*(kind==='rotation'?Math.PI/180:1));const updated=await api('/api/objects',obj);model.objects[model.objects.indexOf(old)]=updated;await buildObjects();toast('Object updated.');},'submit');
 on('duplicateObject',async()=>{const o=structuredClone(model.objects.find(o=>o.id===selected));delete o.id;o.name+=' copy';o.position[0]+=.12;await addObject(o);});
 on('deleteObject',async()=>{await api('/api/objects/'+selected,{},'DELETE');model.objects=model.objects.filter(o=>o.id!==selected);selected=null;await buildObjects();$('objectForm').classList.add('hidden');$('objectEmpty').classList.remove('hidden');});
@@ -339,7 +389,8 @@ function renderActors(){
   for(const actor of model.actors||[]){const button=document.createElement('button');button.className='scene-item'+(selectedActor===actor.id?' selected':'');const icon=document.createElement('span');icon.textContent='▧';const name=document.createElement('div');name.textContent=actor.name;const detail=document.createElement('small');detail.textContent='URDF · '+actor.joints.length+' joints';name.append(detail);button.append(icon,name);button.onclick=()=>selectActor(actor.id);$('actorList').append(button);}
 }
 function robotFor(target){return target==='main'?model:model?.actors?.find(actor=>actor.id===target);}
-function nextSensorName(robot){const used=new Set((robot.sensors||[]).map(sensor=>sensor.name));let index=1,name='Body IMU';while(used.has(name)){index+=1;name='Body IMU '+index;}return name;}
+const SENSOR_NAMES={imu:'Body IMU',color_camera:'Floor camera'};
+function nextSensorName(robot,type='imu'){const base=SENSOR_NAMES[type],used=new Set((robot.sensors||[]).map(sensor=>sensor.name));let index=1,name=base;while(used.has(name)){index+=1;name=base+' '+index;}return name;}
 function editorTab(name){document.querySelectorAll('[data-editor-tab]').forEach(button=>button.classList.toggle('selected',button.dataset.editorTab===name));document.querySelectorAll('.editor-section').forEach(section=>section.classList.toggle('hidden',section.id!=='editor-'+name));}
 document.querySelectorAll('[data-editor-tab]').forEach(button=>button.addEventListener('click',()=>editorTab(button.dataset.editorTab)));
 function buildSensors() {
@@ -348,8 +399,8 @@ function buildSensors() {
   $('sensorLink').replaceChildren(...(robot.links||[]).map(link=>new Option(label(link),link)));
   if(Array.from($('sensorLink').options).some(option=>option.value===previous))$('sensorLink').value=previous;
   $('sensorList').replaceChildren();
-  if(!(robot.sensors||[]).length){const empty=document.createElement('div');empty.className='editor-empty';empty.textContent='No sensors yet. Choose a link above and add an IMU.';$('sensorList').append(empty);}
-  for(const sensor of robot.sensors||[]){const card=document.createElement('div');card.className='sensor-card';const head=document.createElement('header');const title=document.createElement('div');const strong=document.createElement('b');strong.textContent=sensor.name;const link=document.createElement('small');link.textContent='IMU · '+label(sensor.link);title.append(strong,link);const remove=document.createElement('button');remove.type='button';remove.textContent='Remove';remove.onclick=async()=>{await api('/api/sensors/'+editorTarget+'/'+sensor.id,{},'DELETE');await refresh();buildRobotEditor();toast('Sensor removed from '+robot.name+'.');};head.append(title,remove);const values=document.createElement('small');values.id='sensor-value-'+sensor.id;values.className='sensor-readout';values.textContent='RPY 0°, 0°, 0° · gyro 0, 0, 0 rad/s';card.append(head,values);$('sensorList').append(card);}
+  if(!(robot.sensors||[]).length){const empty=document.createElement('div');empty.className='editor-empty';empty.textContent='No sensors yet. Choose a link above and add an IMU or a floor colour camera.';$('sensorList').append(empty);}
+  for(const sensor of robot.sensors||[]){const card=document.createElement('div');card.className='sensor-card';const head=document.createElement('header');const title=document.createElement('div');const strong=document.createElement('b');strong.textContent=sensor.name;const link=document.createElement('small');link.textContent=(sensor.type==='color_camera'?'Floor colour camera':'IMU')+' · '+label(sensor.link);title.append(strong,link);const remove=document.createElement('button');remove.type='button';remove.textContent='Remove';remove.onclick=async()=>{await api('/api/sensors/'+editorTarget+'/'+sensor.id,{},'DELETE');await refresh();buildRobotEditor();toast('Sensor removed from '+robot.name+'.');};head.append(title,remove);const values=document.createElement('small');values.id='sensor-value-'+sensor.id;values.className='sensor-readout';values.textContent=sensor.type==='color_camera'?'colour —':'RPY 0°, 0°, 0° · gyro 0, 0, 0 rad/s';if(sensor.type==='color_camera'){const swatch=document.createElement('span');swatch.id='sensor-swatch-'+sensor.id;swatch.className='sensor-swatch';values.prepend(swatch);}card.append(head,values);$('sensorList').append(card);}
 }
 function buildRobotEditor(){
   const robot=robotFor(editorTarget);if(!robot)return;
@@ -365,10 +416,15 @@ function syncRobotEditorTargets(){const current=editorTarget;$('editorRobot').re
 function openRobotEditor(target=timelineTarget){editorTarget=robotFor(target)?target:'main';syncRobotEditorTargets();buildRobotEditor();$('robotEditorDialog').showModal();}
 on('openRobotEditor',()=>openRobotEditor());on('openRobotEditorFromPose',()=>openRobotEditor());
 on('editorRobot',()=>{editorTarget=$('editorRobot').value;buildRobotEditor();},'change');
-on('addImu',async()=>{const robot=robotFor(editorTarget);const link=$('sensorLink').value;if(!link)throw Error('This robot has no link available for a sensor');const requested=$('sensorName').value.trim();const sensor=await api('/api/sensors',{target:editorTarget,type:'imu',name:requested||nextSensorName(robot),link});await refresh();buildRobotEditor();editorTab('sensors');toast(sensor.name+' added to '+(robot.name||'Bittle')+'.');});
+async function addSensor(type){const robot=robotFor(editorTarget);let link=$('sensorLink').value;if(!link)throw Error('This robot has no link available for a sensor');
+  // The camera goes under the body by default; its default spot is defined for Bittle's body frame.
+  if(type==='color_camera'&&(robot.links||[]).includes('base-frame-link')&&!$('sensorLink').dataset.chosen)link='base-frame-link';
+  let requested=$('sensorName').value.trim();if(!requested||/^(Body IMU|Floor camera)( \d+)?$/.test(requested))requested=nextSensorName(robot,type);
+  const sensor=await api('/api/sensors',{target:editorTarget,type,name:requested,link});await refresh();buildRobotEditor();editorTab('sensors');toast(sensor.name+' added to '+(robot.name||'Bittle')+'.');}
+on('addImu',()=>addSensor('imu'));on('addCamera',()=>addSensor('color_camera'));on('sensorLink',()=>{$('sensorLink').dataset.chosen='1';},'change');
 on('editorApplyUrdf',async()=>{const xml=$('editorUrdf').value;if(editorTarget==='main')await api('/api/urdf',{xml});else await api('/api/actors/'+editorTarget,{xml});await refresh();syncRobotEditorTargets();buildRobotEditor();toast('Robot definition validated and applied.');});
 on('editorDownloadUrdf',()=>download(label(robotFor(editorTarget)?.name||'robot')+'.urdf',$('editorUrdf').value,'application/xml'));
-function updateSensors(readings) {for(const sensor of Object.values(readings||{})){const el=$('sensor-value-'+sensor.id);if(!el)continue;const r=sensor.orientation.map(v=>THREE.MathUtils.radToDeg(v).toFixed(1)+'°').join(', ');const g=sensor.angular_velocity.map(v=>Number(v).toFixed(2)).join(', ');el.textContent='RPY '+r+' · gyro '+g+' rad/s';}}
+function updateSensors(readings) {for(const sensor of Object.values(readings||{})){const el=$('sensor-value-'+sensor.id);if(!el)continue;if(sensor.type==='color_camera'){const swatch=$('sensor-swatch-'+sensor.id);swatch.style.background=sensor.hex||'transparent';el.lastChild.textContent=sensor.hex?`colour ${sensor.hex} · LEDs ${ledHex(sensor)} · rgb ${sensor.color.join(', ')} · sees ${Math.round(sensor.coverage*100)}% floor${sensor.distance!=null?' · '+sensor.distance.toFixed(2)+' m':''}`:'colour — · only the robot itself in view';continue;}const r=sensor.orientation.map(v=>THREE.MathUtils.radToDeg(v).toFixed(1)+'°').join(', ');const g=sensor.angular_velocity.map(v=>Number(v).toFixed(2)).join(', ');el.textContent='RPY '+r+' · gyro '+g+' rad/s';}}
 function selectActor(id){
   const actor=model.actors.find(a=>a.id===id);if(!actor)return;selectedActor=id;selected=null;mainSelected=false;gizmoTarget='actor';gizmo.detach();selectionBox.visible=false;setTimelineTarget(id);$('selectRobot').classList.remove('selected');$('inspectorTitle').textContent='Robot control';$('selectionLabel').textContent='URDF';tab('actor');$('actorEmpty').classList.add('hidden');$('actorForm').classList.remove('hidden');$('actorName').value=actor.name;$('actorUrdf').value=actor.xml;$('actorFixed').checked=actor.fixed;$('actorDiagnostics').replaceChildren(...actor.warnings.map(w=>Object.assign(document.createElement('p'),{textContent:w})));['Position','Rotation'].forEach(kind=>actor[kind.toLowerCase()].forEach((v,i)=>$('actor'+kind+i).value=(kind==='Rotation'?THREE.MathUtils.radToDeg(v):v).toFixed(4)));renderActors();renderObjectList();
 }
@@ -380,6 +436,6 @@ on('deleteActor',async()=>{await api('/api/actors/'+selectedActor,{},'DELETE');s
 
 on('timelineRobot',()=>{const target=$('timelineRobot').value;if(target==='main')selectMainRobot();else {selectActor(target);tab('pose');}},'change');
 async function refresh(){loading=true;try{const target=timelineTarget;model=await api('/api/model');$('timelineRobot').replaceChildren(new Option('Bittle · main','main'),...(model.actors||[]).map(a=>new Option(a.name,a.id)));robotHandle.position.fromArray(model.robot_position||[0,0,.2]);robotHandle.rotation.set(...(model.robot_rotation||[0,0,0]),'XYZ');syncRobotFields();setTimelineTarget(target);$('gravity').value=model.gravity;$('friction').value=model.friction;$('fixed').checked=model.fixed;$('physicsHz').value=model.physics_hz;await buildRobot();await buildObjects();codePanel?.targets();syncRobotEditorTargets();if($('robotEditorDialog').open)buildRobotEditor();}finally{loading=false;}}
-function applyState(s){state=s;if(!model)return;for(const [id,a] of Object.entries(s.actors||{})){for(const [name,[pos,quat]] of Object.entries(a.transforms)){const group=robotLinks.get(id+'/'+name);if(group){group.position.fromArray(pos);group.quaternion.fromArray(quat);}}}if(!(gizmo.dragging&&gizmoTarget==='robot'))for(const [name,[pos,quat]] of Object.entries(s.transforms)){const group=robotLinks.get(name);if(group){group.position.fromArray(pos);group.quaternion.fromArray(quat);}}for(const [id,[pos,quat]] of Object.entries(s.objects)){const mesh=objectMeshes.get(id);if(mesh&&!(gizmo.dragging&&id===selected)){mesh.position.fromArray(pos);mesh.quaternion.fromArray(quat);}}const active=timelineState(s)||s;const editorState=editorTarget==='main'?s:s.actors?.[editorTarget];$('run').textContent=s.running?'Ⅱ Pause physics':'▶ Run physics';$('play').textContent=active.playing?'Ⅱ Pause motion':'▶ Play motion';$('mode').textContent=s.running?'PHYSICS LIVE':'POSE MODE';$('simTime').textContent=s.time.toFixed(2)+' s';$('height').textContent=active.height.toFixed(3)+' m';$('contacts').textContent=active.contacts;$('roll').textContent=THREE.MathUtils.radToDeg(active.rpy[0]).toFixed(1)+'°';if(document.activeElement!==$('scrubber'))$('scrubber').value=active.playhead;if(active.playing)$('frameTime').value=active.playhead.toFixed(2);updatePoseInputs(active.targets);updateSensors(editorState?.sensors);if(s.running)gizmo.detach();else if(!gizmo.object){if(mainSelected)gizmo.attach(robotHandle);else if(selected&&objectMeshes.has(selected))gizmo.attach(objectMeshes.get(selected));}}
+function applyState(s){state=s;if(!model)return;for(const [id,a] of Object.entries(s.actors||{})){for(const [name,[pos,quat]] of Object.entries(a.transforms)){const group=robotLinks.get(id+'/'+name);if(group){group.position.fromArray(pos);group.quaternion.fromArray(quat);}}}if(!(gizmo.dragging&&gizmoTarget==='robot'))for(const [name,[pos,quat]] of Object.entries(s.transforms)){const group=robotLinks.get(name);if(group){group.position.fromArray(pos);group.quaternion.fromArray(quat);}}for(const [id,[pos,quat]] of Object.entries(s.objects)){const mesh=objectMeshes.get(id);if(mesh&&!(gizmo.dragging&&id===selected)){mesh.position.fromArray(pos);mesh.quaternion.fromArray(quat);}}const active=timelineState(s)||s;const editorState=editorTarget==='main'?s:s.actors?.[editorTarget];$('run').textContent=s.running?'Ⅱ Pause physics':'▶ Run physics';$('play').textContent=active.playing?'Ⅱ Pause motion':'▶ Play motion';$('mode').textContent=s.running?'PHYSICS LIVE':'POSE MODE';$('simTime').textContent=s.time.toFixed(2)+' s';$('height').textContent=active.height.toFixed(3)+' m';$('contacts').textContent=active.contacts;$('roll').textContent=THREE.MathUtils.radToDeg(active.rpy[0]).toFixed(1)+'°';if(document.activeElement!==$('scrubber'))$('scrubber').value=active.playhead;if(active.playing)$('frameTime').value=active.playhead.toFixed(2);updatePoseInputs(active.targets);updateSensors(editorState?.sensors);updateCameraMarkers(s);if(s.running)gizmo.detach();else if(!gizmo.object){if(mainSelected)gizmo.attach(robotHandle);else if(selected&&objectMeshes.has(selected))gizmo.attach(objectMeshes.get(selected));}}
 async function poll(){try{if(!loading){applyState(await api('/api/state'));$('connection').textContent='Bullet · '+state.physics_hz+' Hz';}}catch(e){$('connection').textContent='Disconnected · retrying';}setTimeout(poll,16);}
 try {await refresh();applyState(await api('/api/state'));focusRobot();$('loading').remove();codePanel=(await import('./code-panel.js')).initCodePanel({api,toast,getModel:()=>model,refresh});hardwarePanel=(await import('./hardware.js')).initHardware({api,toast,getModel:()=>model,getMapping:()=>Object.keys(mapping).length?mapping:timelineModel().mapping,refresh});window.dispatchEvent(new Event('bittle-hardware-ready'));poll();}catch(e){$('loading').textContent='Could not load Bittle: '+e.message;toast(e.message,true);}

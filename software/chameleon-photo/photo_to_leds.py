@@ -10,10 +10,14 @@ Use:            python photo_to_leds.py --port COM5
                 python photo_to_leds.py --port COM5 --watch
                 python photo_to_leds.py --port COM5 --photo fotos/gras.jpg
                 python photo_to_leds.py --list-ports
+                python photo_to_leds.py --studio --watch       (Bittle Studio only, no robot needed)
+                python photo_to_leds.py --port COM5 --studio   (robot and Bittle Studio together)
 Close the Arduino Serial Monitor first: only one program can use the COM port.
 """
 import argparse
 import colorsys
+import json
+import urllib.request
 import time
 from pathlib import Path
 
@@ -78,17 +82,34 @@ def wait_until_ready(port, timeout=40):
     return False
 
 
-def send(port, rgb):
+STUDIO_URL = 'http://127.0.0.1:8765'
+
+
+def send_to_studio(line):
+    """Play the same command in Bittle Studio's simulator: the virtual LEDs on Bittle's back take the colour."""
+    request = urllib.request.Request(STUDIO_URL + '/api/skill', data=json.dumps({'command': line}).encode(),
+                                     headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(request, timeout=3) as response:
+            return 'ok' if response.status == 200 else 'error %d' % response.status
+    except OSError:
+        return 'not running (start it with the launcher)'
+
+
+def send(port, rgb, studio):
     line = 'v %d %d %d' % rgb
-    print('sent:', line, '| Bittle:', command(port, line) or '(no answer)')
+    if port:
+        print('sent:', line, '| Bittle:', command(port, line) or '(no answer)')
+    if studio:
+        print('sent:', line, '| Bittle Studio:', send_to_studio(line))
 
 
-def show(port, photo):
+def show(port, photo, studio):
     rgb = dominant_colour(photo)
     led = led_colour(rgb)
     print('%s -> most common colour in the middle: %d %d %d (#%02X%02X%02X), LEDs: %d %d %d'
           % ((photo.name,) + rgb + rgb + led))
-    send(port, led)
+    send(port, led, studio)
 
 
 def main():
@@ -98,42 +119,51 @@ def main():
     parser.add_argument('--photo', help='use this one photo instead of the newest in the folder')
     parser.add_argument('--watch', action='store_true', help='keep watching the folder for new photos')
     parser.add_argument('--pin', type=int, default=9, help='GPIO of the LED strip (default 9; 0 = keep the pin set in the .ino)')
+    parser.add_argument('--studio', action='store_true', help='also show the colour on the virtual LEDs in Bittle Studio')
     parser.add_argument('--list-ports', action='store_true', help='show the available COM ports and stop')
     args = parser.parse_args()
 
-    if args.list_ports or not args.port:
+    if args.list_ports or not (args.port or args.studio):
         for p in serial.tools.list_ports.comports():
             print(p.device, '-', p.description)
-        if not args.port:
-            print('\nStart again with --port and the Bittle\'s port, e.g. --port COM5')
+        if not (args.port or args.studio):
+            print('\nStart again with --port and the Bittle\'s port (e.g. --port COM5), and/or --studio for Bittle Studio')
         return
 
     folder = Path(args.folder)
     folder.mkdir(exist_ok=True)
-    with serial.Serial(args.port, 115200, timeout=0.5) as port:
-        if not wait_until_ready(port):
-            return
-        if args.pin:
-            print('LED pin:', command(port, 'v pin %d' % args.pin) or '(no answer)')
-            command(port, 'v off')  # 'v pin' lights the strip white as a test; switch that off again
-
-        if args.photo:
-            show(port, Path(args.photo))
-            return
-        last = None
-        while True:
-            photo = newest_photo(folder)
-            if photo is None and last is None:
-                print('No photos in', folder.resolve(), '- put a .jpg or .png there.')
-                last = 'empty'
-            if photo is not None:
-                key = (photo, photo.stat().st_mtime)
-                if key != last:
-                    show(port, photo)
-                    last = key
-            if not args.watch:
+    port = serial.Serial(args.port, 115200, timeout=0.5) if args.port else None
+    try:
+        if port:
+            if not wait_until_ready(port):
                 return
-            time.sleep(1)
+            if args.pin:
+                print('LED pin:', command(port, 'v pin %d' % args.pin) or '(no answer)')
+                command(port, 'v off')  # 'v pin' lights the strip white as a test; switch that off again
+        run(args, port, folder)
+    finally:
+        if port:
+            port.close()
+
+
+def run(args, port, folder):
+    if args.photo:
+        show(port, Path(args.photo), args.studio)
+        return
+    last = None
+    while True:
+        photo = newest_photo(folder)
+        if photo is None and last is None:
+            print('No photos in', folder.resolve(), '- put a .jpg or .png there.')
+            last = 'empty'
+        if photo is not None:
+            key = (photo, photo.stat().st_mtime)
+            if key != last:
+                show(port, photo, args.studio)
+                last = key
+        if not args.watch:
+            return
+        time.sleep(1)
 
 
 if __name__ == '__main__':

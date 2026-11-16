@@ -10,7 +10,7 @@ Everything is automatic; you only point the webcam at the object.
      the square), so a yellow lamp or a blue-ish webcam is corrected, and a dark object is seen as dark, not grey.
      If the object fills the whole image, the last good measurement is kept.
   3. Colour: the object's colour is measured on the pixels with the most colour, so a dark object still gives its
-     hue. Dull colours get a saturation boost, grey stays grey (white LEDs), and dark objects give dimmer LEDs.
+     hue. Grey stays grey (white LEDs), dark objects give dimmer LEDs, and - / + make the LEDs softer / more vivid.
   4. LEDs: gamma and LED colour correction, because the strip's green is much stronger than its red and blue.
 
 Install once:   pip install pillow pyserial opencv-python
@@ -23,6 +23,7 @@ Keys in the webcam window (all optional, you don't need them):
     w       white balance on a white sheet of paper held in the square (even more exact); r = back to automatic
     [ ]     camera darker / brighter (exposure); a = automatic exposure again
     s       open the webcam driver's own settings window (Windows), for brightness, saturation, focus, ...
+    - +     LED colours softer / more vivid (saturation), live
     b       LED brightness follows the object (dark object = dim LEDs) on/off
     q, Esc  stop (or Ctrl+C in the terminal)
 Close the Arduino Serial Monitor first, and don't connect Bittle Studio itself to the same COM port.
@@ -47,7 +48,7 @@ WB_SPEED = 0.25      # how fast the automatic white balance follows the room (0-
 MAX_GAIN = 1.6       # automatic white balance never changes a colour channel more than this (or 1/this)
 
 # Colour -> LED settings (all can be changed with command line options, see --help)
-SATURATION_BOOST = 2.0           # how much dull colours are made more vivid (1 = not at all)
+SATURATION_BOOST = 1.0           # >1 makes dull colours more vivid, <1 makes all colours softer (keys - and +)
 GREY = 0.12                      # objects with less saturation than this (0-1) are grey/white: white LEDs
 MIN_CHROMA = 6                   # and colour differences below this (0-255) are camera noise, not colour
 MIN_LED_BRIGHTNESS = 0.25        # dimmest LED brightness (0-1) for a very dark object, when brightness follows
@@ -374,7 +375,7 @@ def draw(frame, led, rgb, info):
         cv2.rectangle(frame, (10, 66), (60, 116), (255, 255, 255), 1)
         cv2.putText(frame, 'LEDs %d %d %d' % led, (70, 96), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1)
     cv2.putText(frame, info, (10, h - 32), cv2.FONT_HERSHEY_SIMPLEX, .45, (255, 255, 255), 1)
-    cv2.putText(frame, 'w white balance  [ ] exposure  a auto  s settings  b brightness  q stop',
+    cv2.putText(frame, '- + saturation  w white  [ ] exposure  a auto  s settings  b brightness  q stop',
                 (10, h - 12), cv2.FONT_HERSHEY_SIMPLEX, .45, (255, 255, 255), 1)
 
 
@@ -401,7 +402,7 @@ def main():
     camera_group.add_argument('--settings', action='store_true', help="open the webcam driver's settings window at the start (Windows)")
     colour_group = parser.add_argument_group('colour settings')
     colour_group.add_argument('--boost', type=float, default=SATURATION_BOOST,
-                              help='saturation boost for dull colours (default %g, 1 = none)' % SATURATION_BOOST)
+                              help='saturation: >1 more vivid, <1 softer (default %g; keys - and + change it live)' % SATURATION_BOOST)
     colour_group.add_argument('--full-brightness', action='store_true',
                               help='LEDs always at full brightness, also for dark objects (key b toggles it)')
     colour_group.add_argument('--led-balance', type=float, nargs=3, metavar=('R', 'G', 'B'), default=LED_BALANCE,
@@ -425,6 +426,7 @@ def main():
     if ok:
         balance.update(frame)  # first white balance: from the whole room
     follow = not args.full_brightness
+    boost = args.boost
     port = serial.Serial(args.port, 115200, timeout=0.5) if args.port else None
     try:
         if port:
@@ -449,7 +451,7 @@ def main():
                     continue
                 rgb = object_colour(frame, balance)
                 balance.update(frame, rgb)  # for the next measurement
-                led = led_colour(rgb, balance.white, follow, args.boost, args.led_balance)
+                led = led_colour(rgb, balance.white, follow, boost, args.led_balance)
                 if sent is None or sum(abs(a - b) for a, b in zip(led, sent)) >= MIN_CHANGE:
                     print('webcam -> object colour in the middle: %d %d %d, LEDs: %d %d %d' % (rgb + led))
                     leds.send(port, led, args.studio)
@@ -457,8 +459,8 @@ def main():
             if args.no_window:
                 time.sleep(.03)
                 continue
-            info = 'white balance %s | LED brightness %s' % (
-                balance.describe(), 'follows object' if follow else 'full')
+            info = 'white balance %s | saturation %.2f | LED brightness %s' % (
+                balance.describe(), boost, 'follows object' if follow else 'full')
             shown = frame.copy()
             draw(shown, sent, rgb, info)
             cv2.imshow('Chameleon webcam', shown)
@@ -480,6 +482,10 @@ def main():
                 auto_relock = not args.auto_camera
             elif key == ord('s'):
                 camera.set(cv2.CAP_PROP_SETTINGS, 1)
+            elif key in (ord('-'), ord('_'), ord('+'), ord('=')):
+                boost = min(4.0, max(0.25, boost * (1.25 if key in (ord('+'), ord('=')) else 0.8)))
+                print('Saturation %.2f (start with --boost %.2f to keep this)' % (boost, boost))
+                sent = None
             elif key == ord('b'):
                 follow = not follow
                 print('LED brightness', 'follows the object' if follow else 'always full')

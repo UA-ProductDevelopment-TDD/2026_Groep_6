@@ -11,7 +11,8 @@ Everything is automatic; you only point the webcam at the object.
      If the object fills the whole image, the last good measurement is kept.
   3. Colour: the object's colour is measured on the pixels with the most colour, so a dark object still gives its
      hue. Grey stays grey (white LEDs), dark objects give dimmer LEDs, and - / + make the LEDs softer / more vivid.
-  4. LEDs: gamma and LED colour correction, because the strip's green is much stronger than its red and blue.
+  4. LEDs: dark object = really dark LEDs; the grey part of a colour goes to the strip's white LED (RGBW strip,
+     needs the chameleonLed.h that understands "v r g b w"; older firmware gets "v r g b" as before).
 
 Install once:   pip install pillow pyserial opencv-python
 Use:            python webcam_to_leds.py --studio                 (Bittle Studio only, no robot needed)
@@ -51,7 +52,8 @@ MAX_GAIN = 1.6       # automatic white balance never changes a colour channel mo
 SATURATION_BOOST = 1.0           # >1 makes dull colours more vivid, <1 makes all colours softer (keys - and +)
 GREY = 0.12                      # objects with less saturation than this (0-1) are grey/white: white LEDs
 MIN_CHROMA = 6                   # and colour differences below this (0-255) are camera noise, not colour
-MIN_LED_BRIGHTNESS = 0.25        # dimmest LED brightness (0-1) for a very dark object, when brightness follows
+MIN_LED = 0.15                   # dimmest LED level (0-1) for a dark object: below this the LEDs lose the colour
+                                 # (the firmware already dims everything to 10%, so tiny values round to 0)
 BLACK = 0.06                     # object darker than this (0-1, after white balance) and grey: LEDs off
 LED_BALANCE = (1.0, 0.69, 0.94)  # WS2812 LEDs: green is strongest, so turn it down for real white (FastLED 0xFFB0F0)
 
@@ -335,28 +337,45 @@ def chroma(rgb):
     return float(max(rgb) - min(rgb))
 
 
-def led_colour(rgb, white=255.0, follow_brightness=True, boost=SATURATION_BOOST, balance=LED_BALANCE, gamma=leds.GAMMA):
-    """Object colour -> LED colour.
+def led_colour(rgb, white=255.0, follow_brightness=True, boost=SATURATION_BOOST, balance=LED_BALANCE,
+               gamma=leds.GAMMA, brightness=1.0):
+    """Object colour -> RGBW LED values (R, G, B, W; 0-255).
 
     - hue: kept as it is, also for dark objects (HSV saturation does not depend on brightness)
-    - saturation: dull colours are boosted more than vivid ones, grey stays grey
-    - brightness: relative to white (measured on the room); dark object = dimmer LEDs, never fully off unless black
-    - gamma + LED balance: LEDs are linear and their green is too strong
+    - saturation: - / + keys; grey stays grey
+    - brightness: the object's brightness compared to white (measured on the room), made linear for the LEDs, so a
+      dark object really gives dark LEDs (never below MIN_LED, else the colour is lost); black = off
+    - white LED: the grey part of the colour goes to the strip's own white LED, only the real colour to R, G, B
+    - LED balance: the R, G, B LEDs' green is too strong
     """
     h, s, v = colorsys.rgb_to_hsv(*(c / 255 for c in rgb))
     level = min(1.0, v * 255 / max(white, 1))
     if s < GREY or chroma(rgb) < MIN_CHROMA:
         if level < BLACK:
-            return 0, 0, 0
+            return 0, 0, 0, 0
         s = 0.0
     else:
-        s = ((s - GREY) / (1 - GREY)) ** (1 / boost)  # smooth from grey (0) up, dull colours boosted most
-    if follow_brightness:
-        level = MIN_LED_BRIGHTNESS + (1 - MIN_LED_BRIGHTNESS) * level ** 0.5  # eyes see brightness as a square root
-    else:
-        level = 1.0
-    r, g, b = colorsys.hsv_to_rgb(h, s, level)
-    return tuple(int(round(255 * k * c ** gamma)) for k, c in zip(balance, (r, g, b)))
+        s = min(1.0, ((s - GREY) / (1 - GREY)) ** (1 / boost))  # smooth from grey (0) up
+    linear = [c ** gamma for c in colorsys.hsv_to_rgb(h, s, 1.0)]  # colour at full brightness, as LED light
+    peak = max(MIN_LED, level ** gamma) if follow_brightness else 1.0
+    linear = [c * peak * brightness for c in linear]
+    w = min(linear)  # the grey part: the white LED does that better than R + G + B together
+    return tuple(int(round(255 * k * (c - w))) for k, c in zip(balance, linear)) + (int(round(255 * w)),)
+
+
+def preview(led):
+    """RGBW -> RGB, for the colour square in the window and for Bittle Studio (which has no white LED)."""
+    return tuple(min(255, c + led[3]) for c in led[:3])
+
+
+def send(port, led, studio, rgbw):
+    """'v r g b w' to the robot (firmware with white LED) or 'v r g b' with the white mixed in (older firmware)."""
+    if port:
+        line = 'v %d %d %d %d' % led if rgbw else 'v %d %d %d' % preview(led)
+        print('sent:', line, '| Bittle:', leds.command(port, line) or '(no answer)')
+    if studio:
+        line = 'v %d %d %d' % preview(led)
+        print('sent:', line, '| Bittle Studio:', leds.send_to_studio(line))
 
 
 # ---------------------------------------------------------------- window
@@ -371,9 +390,9 @@ def draw(frame, led, rgb, info):
         cv2.rectangle(frame, (10, 10), (60, 60), (255, 255, 255), 1)
         cv2.putText(frame, 'object %d %d %d' % rgb, (70, 30), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1)
     if led:
-        cv2.rectangle(frame, (10, 66), (60, 116), led[::-1], -1)
+        cv2.rectangle(frame, (10, 66), (60, 116), preview(led)[::-1], -1)
         cv2.rectangle(frame, (10, 66), (60, 116), (255, 255, 255), 1)
-        cv2.putText(frame, 'LEDs %d %d %d' % led, (70, 96), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1)
+        cv2.putText(frame, 'LEDs R%d G%d B%d W%d' % led, (70, 96), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1)
     cv2.putText(frame, info, (10, h - 32), cv2.FONT_HERSHEY_SIMPLEX, .45, (255, 255, 255), 1)
     cv2.putText(frame, '- + saturation  w white  [ ] exposure  a auto  s settings  b brightness  q stop',
                 (10, h - 12), cv2.FONT_HERSHEY_SIMPLEX, .45, (255, 255, 255), 1)
@@ -403,6 +422,8 @@ def main():
     colour_group = parser.add_argument_group('colour settings')
     colour_group.add_argument('--boost', type=float, default=SATURATION_BOOST,
                               help='saturation: >1 more vivid, <1 softer (default %g; keys - and + change it live)' % SATURATION_BOOST)
+    colour_group.add_argument('--brightness', type=float, default=1.0,
+                              help='all LEDs this much dimmer, 0-1 (default 1; e.g. 0.5 = half)')
     colour_group.add_argument('--full-brightness', action='store_true',
                               help='LEDs always at full brightness, also for dark objects (key b toggles it)')
     colour_group.add_argument('--led-balance', type=float, nargs=3, metavar=('R', 'G', 'B'), default=LED_BALANCE,
@@ -428,6 +449,7 @@ def main():
     follow = not args.full_brightness
     boost = args.boost
     port = serial.Serial(args.port, 115200, timeout=0.5) if args.port else None
+    rgbw = False  # does the robot's firmware drive the white LED too?
     try:
         if port:
             if not leds.wait_until_ready(port):
@@ -435,6 +457,9 @@ def main():
             if args.pin:
                 print('LED pin:', leds.command(port, 'v pin %d' % args.pin) or '(no answer)')
                 leds.command(port, 'v off')
+            rgbw = 'white' in leds.command(port, 'v ?')
+            print('White LED:', 'used (firmware understands "v r g b w")' if rgbw else
+                  'not used: this firmware only knows "v r g b"; upload the new chameleonLed.h for the white LED')
         print('Running. Point the webcam at something colourful.')
         sent, rgb, last_check = None, None, 0.
         while True:
@@ -451,10 +476,10 @@ def main():
                     continue
                 rgb = object_colour(frame, balance)
                 balance.update(frame, rgb)  # for the next measurement
-                led = led_colour(rgb, balance.white, follow, boost, args.led_balance)
+                led = led_colour(rgb, balance.white, follow, boost, args.led_balance, brightness=args.brightness)
                 if sent is None or sum(abs(a - b) for a, b in zip(led, sent)) >= MIN_CHANGE:
-                    print('webcam -> object colour in the middle: %d %d %d, LEDs: %d %d %d' % (rgb + led))
-                    leds.send(port, led, args.studio)
+                    print('webcam -> object colour in the middle: %d %d %d, LEDs: R%d G%d B%d W%d' % (rgb + led))
+                    send(port, led, args.studio, rgbw)
                     sent = led
             if args.no_window:
                 time.sleep(.03)

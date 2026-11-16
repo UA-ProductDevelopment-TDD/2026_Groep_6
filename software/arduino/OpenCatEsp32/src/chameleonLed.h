@@ -3,6 +3,7 @@
 //
 // Serial Monitor (115200 baud, line ending "Newline"):
 //   v 255 0 0      set the colour as R G B (0-255)
+//   v 255 0 0 40   same, plus the strip's separate white LED (RGBW strip, 0-255)
 //   v #00FF00      set the colour as hex
 //   v blue         colour by name: red orange yellow green cyan blue purple pink white
 //   v off          LEDs off (a bare "v" does the same)
@@ -28,17 +29,18 @@
 
 Adafruit_NeoPixel chameleonStrip(CHAMELEON_LED_COUNT, CHAMELEON_LED_PIN, NEO_GRBW + NEO_KHZ800);
 int chameleonPin = CHAMELEON_LED_PIN;
-uint8_t chameleonRGB[3] = { 0, 0, 0 };
+uint8_t chameleonRGB[4] = { 0, 0, 0, 0 };  // R, G, B and the white LED
 
 void chameleonShow() {
-  chameleonStrip.fill(chameleonStrip.Color(chameleonRGB[0], chameleonRGB[1], chameleonRGB[2]));
+  chameleonStrip.fill(chameleonStrip.Color(chameleonRGB[0], chameleonRGB[1], chameleonRGB[2], chameleonRGB[3]));
   chameleonStrip.show();
 }
 
-void chameleonSetColor(int r, int g, int b) {
+void chameleonSetColor(int r, int g, int b, int w = 0) {
   chameleonRGB[0] = constrain(r, 0, 255);
   chameleonRGB[1] = constrain(g, 0, 255);
   chameleonRGB[2] = constrain(b, 0, 255);
+  chameleonRGB[3] = constrain(w, 0, 255);
   chameleonShow();
 }
 
@@ -50,10 +52,10 @@ void chameleonLedSetup() {
 }
 
 void chameleonPrintState() {
-  char line[80];
-  snprintf(line, sizeof(line), "LED pin %d, %d LEDs, colour %d %d %d #%02X%02X%02X", chameleonPin,
+  char line[96];
+  snprintf(line, sizeof(line), "LED pin %d, %d LEDs, colour %d %d %d #%02X%02X%02X, white %d", chameleonPin,
            chameleonStrip.numPixels(), chameleonRGB[0], chameleonRGB[1], chameleonRGB[2], chameleonRGB[0],
-           chameleonRGB[1], chameleonRGB[2]);
+           chameleonRGB[1], chameleonRGB[2], chameleonRGB[3]);
   printToAllPorts(line);
 }
 
@@ -89,7 +91,7 @@ const ChameleonNamedColor chameleonNames[] = {
 void chameleonCommand(const char *cmd) {
   while (*cmd == ' ')
     cmd++;
-  int a, b, c;
+  int a, b, c, d = 0;  // d = white LED, stays 0 for "v r g b"
   if (*cmd == '\0') {
     chameleonSetColor(0, 0, 0);
   } else if (*cmd == '?') {
@@ -116,8 +118,8 @@ void chameleonCommand(const char *cmd) {
   } else if (*cmd == '#') {
     unsigned long hex = strtoul(cmd + 1, NULL, 16);
     chameleonSetColor((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF);
-  } else if (sscanf(cmd, "%d %d %d", &a, &b, &c) == 3) {
-    chameleonSetColor(a, b, c);
+  } else if (sscanf(cmd, "%d %d %d %d", &a, &b, &c, &d) >= 3) {
+    chameleonSetColor(a, b, c, d);
   } else {
     bool found = false;
     for (const ChameleonNamedColor &n : chameleonNames)
@@ -127,7 +129,7 @@ void chameleonCommand(const char *cmd) {
         break;
       }
     if (!found) {
-      printToAllPorts("Use: v 255 0 0, v #FF0000, v red, v off, v pin 9, v count 8 or v ?");
+      printToAllPorts("Use: v 255 0 0, v 255 0 0 40 (RGBW), v #FF0000, v red, v off, v pin 9, v count 8 or v ?");
       return;
     }
   }

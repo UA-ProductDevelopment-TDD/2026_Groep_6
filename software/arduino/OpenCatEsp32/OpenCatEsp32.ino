@@ -31,6 +31,10 @@
 #define CHAMELEON_LED_PIN 10       // GPIO wired to the strip's DIN. Grove UART2 port on BiBoard V1 = GPIO 9 and 10; test with "v pin 9"
 #define CHAMELEON_LED_COUNT 25      // number of LEDs on the strip
 #define CHAMELEON_LED_BRIGHTNESS 26 // 0-255, 26 = 10%
+#define CHAMELEON_TONGUE          // our chameleon tongue servo, steered with the serial command "y" (see src/chameleonTongue.h)
+#define TONGUE_JOINT 1            // servo header of the tongue: 1 = socket 14 (GPIO 14, our tongue), 2 = socket 5. Not a Grove port!
+#define TONGUE_IN_ANGLE 10        // SG90 angle (0-180) with the tongue in. "y 10" goes there too
+#define TONGUE_OUT_ANGLE 100      // SG90 angle (0-180) with the tongue out. "y 100" goes there too
 #include "src/OpenCat.h"
 
 // Set Arduino loop task stack size to 16KB (default is 8KB) for debugging

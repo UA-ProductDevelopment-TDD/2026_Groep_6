@@ -552,7 +552,13 @@ int runDelay = delayMid;
 int8_t middleShift[] = {0, 15, 0, 0, -45, -45, -45, -45, 10, 10, -10, -10, -30, -30, 30, 30};
 #elif defined BITTLE
 #ifndef MINI
-int8_t middleShift[] = { 0, -90, 0, 0,
+int8_t middleShift[] = { 0,
+#if defined CHAMELEON_TONGUE && TONGUE_JOINT == 1
+                         0,  // our tongue servo on socket 14: centred (OpenCat normally shifts this joint 90 degrees for the head clip arm)
+#else
+                         -90,
+#endif
+                         0, 0,
                          -45, -45, -45, -45,
                          55, 55, -55, -55,
                          -55, -55, -55, -55 };
@@ -652,6 +658,9 @@ int balanceSlope[2] = {1, 1};  // roll, pitch
 #endif
 #ifdef CHAMELEON_LED
 #include "chameleonLed.h"
+#endif
+#ifdef CHAMELEON_TONGUE
+#include "chameleonTongue.h"
 #endif
 #include "reaction.h"
 #include "qualityAssurance.h"

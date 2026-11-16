@@ -5,6 +5,9 @@ ServoModel servoG41(180, SERVO_FREQ, 500, 2500);
 ServoModel servoP1S(290, SERVO_FREQ, 500, 2500);  // 1s/4 = 250ms 250ms/2500us=100Hz
 ServoModel servoP1L(270, SERVO_FREQ, 500, 2500);
 ServoModel servoP50(120, SERVO_FREQ, 900, 2100);
+#ifdef CHAMELEON_TONGUE
+ServoModel servoSG90(180, 50, 500, 2400);  // our tongue servo: ordinary hobby servo, 50 Hz
+#endif
 #ifdef BiBoard2
 #include "pcaServo.h"
 #endif
@@ -57,6 +60,10 @@ void attachAllESPServos() {
         modelObj[s] = &servoP50;
         break;
     }
+#ifdef CHAMELEON_TONGUE
+    if (joint == TONGUE_JOINT)
+      modelObj[s] = &servoSG90;
+#endif
     servo[s].attach(PWM_pin[s], modelObj[s]);
     zeroPosition[joint] = modelObj[s]->getAngleRange() / 2 + float(middleShift[joint]) * rotationDirection[joint];
     calibratedZeroPosition[joint] = zeroPosition[joint] + float(servoCalib[joint]) * rotationDirection[joint];

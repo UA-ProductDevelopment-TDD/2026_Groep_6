@@ -1537,6 +1537,13 @@ void reaction() {  // Reminder:  reaction() is repeatedly called in the "forever
           break;
         }
 #endif
+#ifdef CHAMELEON_TONGUE
+      case T_TONGUE:  // chameleon tongue servo, e.g. "y" flicks, "y out", "y 30" (see chameleonTongue.h)
+        {
+          tongueCommand(newCmd);
+          break;
+        }
+#endif
       default:
         {
           printToAllPorts("Undefined token!");

@@ -10,6 +10,8 @@ Run:  python server.py --serial COM5      (USB cable)
       python server.py --studio            (the simulated Bittle in Bittle Studio)
       python server.py --dry-run           (no robot, just prints the commands)
 Add --legs natural to try the natural leg movement (see README).
+
+The landscape page with sliders and the BITE button is at /horizontal.
 """
 
 import argparse
@@ -47,6 +49,28 @@ BACK = {"center": 48, "range": 26, "knee_at_front": 0, "knee_slope": 0.45}
 LIFT_DEGREES = 35       # how far the knee folds when the foot is fully lifted
 SEND_RATE_HZ = 15       # how often new angles go to the robot (max)
 START_COMMANDS = ["gb"]  # gyro balancing off, so the robot doesn't fight the players
+PARTNER = {"left": "right", "right": "left", "front": "back", "back": "front", "diag1": "diag2", "diag2": "diag1"}
+
+# BITE button (on /horizontal). It only works when both players of a pair press within
+# BITE_WINDOW_S of each other. Then the head servo sweeps through its whole range, as a
+# test that the servo works before the head is rebuilt into the chameleon's tongue.
+# A full 360 degrees isn't possible: the firmware limits the Bittle's head (joint 0) to
+# -120..120 degrees (angleLimit in software/arduino/src/OpenCat.h), so the sweep goes all the
+# way to one side, all the way to the other side and back to the middle.
+HEAD_JOINT = 0
+HEAD_LIMITS = (-120, 120)
+HEAD_SPIN = [  # (head angle in degrees, time in seconds since the bite)
+    (0, 0.0),
+    (-120, 0.6),   # all the way to one side...
+    (-120, 0.8),   # ...and wait there briefly, so the servo really gets to the end
+    (120, 2.0),    # all the way to the other side
+    (120, 2.2),
+    (0, 2.8),      # back to the middle
+]
+HEAD_SPIN_STEP_S = 0.05  # how often a new head angle is sent during the sweep
+BITE_EXTRA_COMMANDS = ["b 20 8"]  # sent when the bite starts (a beep); [] for silence
+BITE_WINDOW_S = 0.5    # how close together the two presses must be
+BITE_COOLDOWN_S = 1.0  # rest time after the sweep before BITE works again
 
 ble_service = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"  # Petoi BLE UART
 ble_rx_char = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"  # we write commands here
@@ -125,15 +149,70 @@ def natural_leg_angles(name, swing, lift):
 LEG_STYLES = {"simple": leg_angles, "natural": natural_leg_angles}
 
 
+def head_angle_at(t):
+    """Head angle t seconds into the sweep, moving in straight lines between HEAD_SPIN points."""
+    for (a0, t0), (a1, t1) in zip(HEAD_SPIN, HEAD_SPIN[1:]):
+        if t < t1:
+            return a0 + (a1 - a0) * (t - t0) / (t1 - t0)
+    return HEAD_SPIN[-1][0]  # exactly the last angle, without rounding errors
+
+
 class Game:
     def __init__(self, legs="simple"):
         self.leg_angles = LEG_STYLES[legs]
         self.legs = {name: {"swing": 0.0, "lift": 0.0} for name in LEGS}
         self.players = {role: set() for role in ROLES}
         self.changed = asyncio.Event()
+        self.pending = []    # one-off commands (the BITE beep) for the robot loop to send
+        self.bite_held = {}  # websocket -> role, while that player holds BITE
+        self.bite_time = {}  # role -> time of its last BITE press
+        self.head = 0.0
+        self.head_used = False  # the head only joins the robot command after the first BITE
+        self.spinning = False
+        self.bite_ready_at = 0.0
+
+    def press_bite(self, ws, role, pressed, on_change):
+        """A player pressed (or let go of) BITE. Returns True if this press started the head sweep."""
+        now = asyncio.get_running_loop().time()
+        if not pressed:
+            self.bite_held.pop(ws, None)
+            return False
+        self.bite_held[ws] = role
+        self.bite_time[role] = now
+        partner = PARTNER[role]
+        together = partner in self.bite_held.values() or now - self.bite_time.get(partner, -99) <= BITE_WINDOW_S
+        if not together or self.spinning or now < self.bite_ready_at:
+            return False
+        self.bite_time.clear()
+        self.spinning = self.head_used = True
+        self.bite_ready_at = now + HEAD_SPIN[-1][1] + BITE_COOLDOWN_S
+        self.pending.extend(BITE_EXTRA_COMMANDS)
+        asyncio.get_running_loop().create_task(self._spin_head(on_change))
+        return True
+
+    async def _spin_head(self, on_change):
+        loop = asyncio.get_running_loop()
+        start, end = loop.time(), HEAD_SPIN[-1][1]
+        last_broadcast = -1.0
+        while True:
+            t = min(loop.time() - start, end)
+            self.head = head_angle_at(t)
+            self.changed.set()
+            if t - last_broadcast >= 0.1 or t >= end:  # the phones redraw about 10 times a second
+                last_broadcast = t
+                await on_change()
+            if t >= end:
+                break
+            await asyncio.sleep(HEAD_SPIN_STEP_S)
+        self.spinning = False
+        await on_change()
+        await asyncio.sleep(BITE_COOLDOWN_S)
+        await on_change()  # so the BITE button lights up again
 
     def command(self):
         parts = ["i"]
+        if self.head_used:
+            parts += [str(HEAD_JOINT), str(round(clamp(self.head, *HEAD_LIMITS)))]
         for name, leg in LEGS.items():
             shoulder, knee = self.leg_angles(name, **self.legs[name])
             parts += [str(leg["shoulder"]), str(shoulder), str(leg["knee"]), str(knee)]
@@ -150,6 +229,14 @@ class Game:
             "legs": self.legs,
             "players": {role: len(ws) for role, ws in self.players.items()},
             "roles": ROLES,  # the phone page takes each role's legs from here
+            # joint angles the robot gets, so the horizontal page can draw the legs without its own formula
+            "angles": {name: self.leg_angles(name, **leg) for name, leg in self.legs.items()},
+            "head": round(self.head),
+            "bite": {
+                "pressed": sorted(set(self.bite_held.values())),  # roles holding BITE right now
+                "active": self.spinning,                          # the head sweep is running
+                "cooldown": asyncio.get_running_loop().time() < self.bite_ready_at,
+            },
         }
 
 
@@ -269,6 +356,8 @@ async def robot_loop(game, robot):
     while True:
         await game.changed.wait()
         game.changed.clear()
+        while game.pending:
+            await robot.send(game.pending.pop(0))
         cmd = game.command()
         if cmd != last:
             await robot.send(cmd)
@@ -310,10 +399,14 @@ async def websocket(request):
                     game.legs[name]["swing"] = clamp(float(data.get("swing", 0)), -1, 1)
                     game.legs[name]["lift"] = clamp(float(data.get("lift", 0)), 0, 1)
                     game.changed.set()
+            elif data.get("type") == "bite" and role:
+                if game.press_bite(ws, role, bool(data.get("pressed")), lambda: broadcast(game)):
+                    print("Both players hit BITE: head sweep!")
             elif data.get("type") == "reset":
                 game.reset()
             await broadcast(game)
     finally:
+        game.bite_held.pop(ws, None)
         if role:
             game.players[role].discard(ws)
             for name in ROLES[role]:  # put the leaving player's feet down
@@ -328,12 +421,30 @@ async def index(request):
     return web.FileResponse(STATIC / "index.html")
 
 
+async def horizontal(request):
+    return web.FileResponse(STATIC / "horizontal.html")
+
+
+# These make /horizontal installable as an app on the phone's home screen (see README).
+async def manifest(request):
+    return web.FileResponse(STATIC / "manifest.webmanifest", headers={"Content-Type": "application/manifest+json"})
+
+
+async def service_worker(request):
+    # must come from the site root so it may control /horizontal; never cached, so phones get new versions
+    return web.FileResponse(STATIC / "sw.js", headers={"Content-Type": "text/javascript", "Cache-Control": "no-cache"})
+
+
 def make_app(game):
-    """The web app: the phone page on / and the game on /ws. Used by main() and the tests."""
+    """The web app: the phone pages on / and /horizontal, the game on /ws. Used by main() and the tests."""
     app = web.Application()
     app["game"] = game
     app.router.add_get("/", index)
+    app.router.add_get("/horizontal", horizontal)
     app.router.add_get("/ws", websocket)
+    app.router.add_get("/manifest.webmanifest", manifest)
+    app.router.add_get("/sw.js", service_worker)
+    app.router.add_static("/icons", STATIC / "icons")
     return app
 
 
@@ -386,7 +497,8 @@ async def main():
     print("Then open one of these on both phones (same WiFi as this laptop):")
     for ip in local_ips():
         print(f"    http://{ip}:{args.port}")
-    print("If the first one shows something else, try the next. Use the one that says 'Bittle Duo'.\n")
+    print("If the first one shows something else, try the next. Use the one that says 'Bittle Duo'.")
+    print("Landscape version with sliders and BITE: add /horizontal to the address.\n")
 
     await robot_loop(game, robot)
 

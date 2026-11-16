@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Bittle Duo Horizontal</title>
+<!-- installable as an app: Android uses the manifest, iPhone the apple-* tags -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#14161a">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bittle Duo">
+<style>
+  :root { --bg:#14161a; --panel:#1f232a; --panel2:#2a2f38; --text:#eef1f5; --muted:#8a93a3;
+          --legA:#4fa3ff; --legB:#ff8a4f; --up:#7cf29c; --tongue:#ff4f7b; --cham:#3fbf6a; }
+  * { box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:system-ui, -apple-system, "Segoe UI", sans-serif; overscroll-behavior:none; overflow:hidden; }
+  body { display:flex; flex-direction:column; }
+  .hidden { display:none !important; }
+
+  /* ---------- role picker ---------- */
+  #pick { flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:12px; padding:16px; }
+  #pick h1 { margin:0; font-size:26px; }
+  #pick p { margin:0; color:var(--muted); text-align:center; max-width:520px; font-size:14px; }
+  #pick .pair { display:flex; gap:14px; width:100%; max-width:560px; }
+  #pick button { flex:1; font-size:20px; padding:22px 8px; border:0; border-radius:16px; color:#0b0d10; font-weight:800; }
+  #pick button small { display:block; font-size:12px; font-weight:500; opacity:.8; margin-top:4px; }
+  #pick button[data-role=front] { background:var(--legA); }
+  #pick button[data-role=back] { background:var(--legB); }
+  #pick a { color:var(--muted); font-size:13px; }
+
+  /* ---------- play screen ---------- */
+  #play { flex:1; display:flex; flex-direction:column; min-height:0;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  header { display:flex; align-items:center; gap:10px; padding:6px 12px; background:var(--panel); }
+  header .who { font-weight:800; color:var(--side); }
+  header .info { color:var(--muted); font-size:13px; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  header button { background:#333a45; color:var(--text); border:0; border-radius:8px; padding:6px 10px; font-size:13px; }
+
+  #stage { flex:1; display:grid; grid-template-columns:minmax(150px, 1fr) minmax(220px, 1.5fr) minmax(150px, 1fr);
+    gap:8px; padding:8px; min-height:0; }
+
+  .leg { display:flex; flex-direction:column; background:var(--panel); border-radius:16px; padding:8px 8px 6px; min-height:0;
+    border:2px solid transparent; }
+  .leg.busy { border-color:var(--col); }
+  .leg h2 { margin:0 0 6px; font-size:14px; text-align:center; color:var(--col); }
+  .leg .sliders { flex:1; display:flex; gap:8px; min-height:0; }
+  .leg.right .sliders { flex-direction:row-reverse; }   /* swing slider always on the outside edge */
+
+  .slider { flex:1; display:flex; flex-direction:column; align-items:center; min-height:0; }
+  .slider .end { font-size:11px; color:var(--muted); line-height:1.3; }
+  .slider .name { font-size:12px; font-weight:700; margin-top:2px; }
+  .slider .track { flex:1; position:relative; width:100%; max-width:72px; margin:6px 0 8px; border-radius:14px;
+    background:var(--panel2); touch-action:none; min-height:60px; }
+  .slider .track::before { content:""; position:absolute; left:50%; top:22px; bottom:22px; width:4px; margin-left:-2px;
+    background:#3b424e; border-radius:2px; }
+  .slider .fill { position:absolute; left:50%; width:4px; margin-left:-2px; background:var(--col); border-radius:2px; }
+  .slider .thumb { position:absolute; left:50%; width:44px; height:44px; margin:-22px 0 0 -22px; border-radius:50%;
+    background:var(--col); box-shadow:0 2px 8px rgba(0,0,0,.4); pointer-events:none; }
+  .slider.active .thumb { box-shadow:0 0 0 8px color-mix(in srgb, var(--col) 30%, transparent); }
+  .slider.lift.raised .thumb { background:var(--up); }
+  .slider .val { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+  #center { display:flex; flex-direction:column; align-items:center; gap:6px; min-height:0; min-width:0; }
+  #view { flex:1; width:100%; min-height:0; background:var(--panel); border-radius:16px; position:relative; }
+  #view svg { position:absolute; inset:0; width:100%; height:100%; }
+  #biteRow { display:flex; align-items:center; gap:14px; }
+  #bite { width:92px; height:92px; border-radius:50%; border:0; font-size:20px; font-weight:900; letter-spacing:1px;
+    color:#fff; background:radial-gradient(circle at 35% 30%, #ff7d9c, var(--tongue) 60%, #b02246);
+    box-shadow:0 5px 0 #7a1630, 0 8px 18px rgba(0,0,0,.45); touch-action:none; transition:transform .05s, box-shadow .05s; }
+  #bite.down { transform:translateY(4px); box-shadow:0 1px 0 #7a1630, 0 3px 8px rgba(0,0,0,.45); }
+  #bite.cool { filter:grayscale(.7) brightness(.7); }
+  .lamp { display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; color:var(--muted); width:58px; }
+  .lamp i { width:16px; height:16px; border-radius:50%; background:#333a45; display:block; transition:background .1s; }
+  .lamp.on i { background:var(--up); box-shadow:0 0 10px var(--up); }
+
+  #rotate { position:fixed; inset:0; background:var(--bg); display:none; flex-direction:column; align-items:center;
+    justify-content:center; gap:14px; text-align:center; padding:24px; z-index:10; }
+  #rotate .phone { width:46px; height:80px; border:4px solid var(--text); border-radius:10px; animation:turn 1.6s ease-in-out infinite; }
+  @keyframes turn { 0%,30% { transform:rotate(0) } 60%,100% { transform:rotate(-90deg) } }
+  @media (orientation: portrait) { body.playing #rotate { display:flex; } }
+</style>
+</head>
+<body>
+
+<div id="rotate"><div class="phone"></div><b>Turn your phone sideways</b><span style="color:var(--muted)">This controller works in landscape.</span></div>
+
+<section id="pick">
+  <h1>Bittle Duo · Horizontal</h1>
+  <p>One of you steers the two front legs, the other the two back legs. Hit <b>BITE</b> together and the head sweeps all the way round (a servo test for the future tongue).</p>
+  <div class="pair">
+    <button data-role="front">FRONT LEGS<small id="cnt-front">free</small></button>
+    <button data-role="back">BACK LEGS<small id="cnt-back">free</small></button>
+  </div>
+  <p id="conn">Connecting…</p>
+  <a href="/">Portrait version</a>
+</section>
+
+<section id="play" class="hidden">
+  <header>
+    <span class="who" id="who"></span>
+    <span class="info" id="info"></span>
+    <button id="reset">Reset legs</button>
+    <button id="switch">Switch</button>
+  </header>
+  <div id="stage">
+    <div class="leg left" data-slot="0">
+      <h2></h2>
+      <div class="sliders">
+        <div class="slider swing"><span class="end">▲ fwd</span><div class="track"><div class="fill"></div><div class="thumb"></div></div><span class="end">▼ back</span><span class="name">Swing</span><span class="val"></span></div>
+        <div class="slider lift"><span class="end">▲ up</span><div class="track"><div class="fill"></div><div class="thumb"></div></div><span class="end">▼ down</span><span class="name">Lift</span><span class="val"></span></div>
+      </div>
+    </div>
+    <div id="center">
+      <div id="view"><svg id="dog" viewBox="0 0 320 170" preserveAspectRatio="xMidYMid meet" aria-label="Side view of the chameleon Bittle"></svg></div>
+      <div id="biteRow">
+        <div class="lamp" id="lampMe"><i></i>you</div>
+        <button id="bite">BITE</button>
+        <div class="lamp" id="lampThem"><i></i>partner</div>
+      </div>
+    </div>
+    <div class="leg right" data-slot="1">
+      <h2></h2>
+      <div class="sliders">
+        <div class="slider swing"><span class="end">▲ fwd</span><div class="track"><div class="fill"></div><div class="thumb"></div></div><span class="end">▼ back</span><span class="name">Swing</span><span class="val"></span></div>
+        <div class="slider lift"><span class="end">▲ up</span><div class="track"><div class="fill"></div><div class="thumb"></div></div><span class="end">▼ down</span><span class="name">Lift</span><span class="val"></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+// Player's left-hand panel drives the dog's left leg, right-hand panel its right leg.
+// Which legs each role has comes from the server (status.roles); these are the defaults until it arrives.
+const ROLES = {
+  front: { name:'FRONT legs', legs:['FL','FR'], partner:'back' },
+  back:  { name:'BACK legs',  legs:['BL','BR'], partner:'front' },
+};
+const LEG_NAMES = { FL:'Left front', FR:'Right front', BL:'Left back', BR:'Right back' };
+const LEG_COLOR = { L:'var(--legA)', R:'var(--legB)' };   // left legs blue, right legs orange
+const LIFT_SPRINGS_BACK = true;   // let go of the Lift slider and the foot goes back down
+
+const legs = { FL:{swing:0,lift:0}, FR:{swing:0,lift:0}, BL:{swing:0,lift:0}, BR:{swing:0,lift:0} };
+// joint angles the robot gets, as [shoulder, knee], sent by the server (it owns the formula and --legs style)
+let angles = { FL:[42,13], FR:[42,13], BL:[48,12], BR:[48,12] };
+let role = null, ws = null, players = {}, bite = { pressed:[], active:false, cooldown:false };
+let head = 0, headShown = 0, biteHeld = false;   // head angle from the laptop, and the smoothed one we draw
+const dragging = {}, dirty = new Set();
+const mine = name => role && ROLES[role].legs.includes(name);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const $ = id => document.getElementById(id);
+const send = obj => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); };
+
+// Lets Android install this page as an app. Browsers only allow it on https or on a
+// laptop address marked as trusted (see the README), so failing here is normal.
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { $('conn').textContent = 'Connected to the laptop.'; if (role) send({type:'join', role}); };
+  ws.onclose = () => { $('conn').textContent = 'Lost the laptop, retrying…'; $('info').textContent = 'Reconnecting…';
+                       setTimeout(connect, 1000); };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type !== 'status') return;
+    players = msg.players || {};
+    if (msg.roles) for (const r in ROLES) if (msg.roles[r]) ROLES[r].legs = msg.roles[r];
+    if (msg.angles) angles = msg.angles;
+    if (msg.bite) bite = msg.bite;
+    if (typeof msg.head === 'number') head = msg.head;
+    for (const name in msg.legs) if (!mine(name) || !dragging[name]) legs[name] = msg.legs[name];
+    render();
+  };
+}
+connect();
+
+function join(r) {
+  role = r;
+  const R = ROLES[r];
+  document.documentElement.style.setProperty('--side', r === 'front' ? 'var(--legA)' : 'var(--legB)');
+  $('who').textContent = R.name;
+  document.querySelectorAll('.leg').forEach(panel => {
+    const name = R.legs[panel.dataset.slot];
+    panel.style.setProperty('--col', LEG_COLOR[name[1]]);
+    panel.querySelector('h2').textContent = LEG_NAMES[name] + ' leg';
+  });
+  $('pick').classList.add('hidden');
+  $('play').classList.remove('hidden');
+  document.body.classList.add('playing');
+  send({type:'join', role});
+  goLandscape();
+  render();
+}
+async function goLandscape() {
+  // Android Chrome only locks orientation in fullscreen; iOS ignores both, the rotate hint covers it.
+  try { if (!document.fullscreenElement) await document.documentElement.requestFullscreen(); } catch (e) {}
+  try { await screen.orientation.lock('landscape'); } catch (e) {}
+}
+document.querySelectorAll('#pick button[data-role]').forEach(b => b.onclick = () => join(b.dataset.role));
+$('switch').onclick = () => {
+  setBite(false);
+  $('play').classList.add('hidden'); $('pick').classList.remove('hidden');
+  document.body.classList.remove('playing');
+  try { document.exitFullscreen(); } catch (e) {}
+};
+$('reset').onclick = () => send({type:'reset'});
+
+// ---------- sliders: relative drag, the leg never jumps when you touch the track ----------
+document.querySelectorAll('.leg').forEach(panel => {
+  panel.querySelectorAll('.slider').forEach(slider => {
+    const track = slider.querySelector('.track');
+    const isLift = slider.classList.contains('lift');
+    let start = null;
+    const legName = () => ROLES[role].legs[panel.dataset.slot];
+    track.addEventListener('pointerdown', e => {
+      if (!role) return;
+      e.preventDefault();
+      try { track.setPointerCapture(e.pointerId); } catch (err) {}
+      const leg = legName();
+      start = { y:e.clientY, value: isLift ? legs[leg].lift : legs[leg].swing, leg };
+      dragging[leg] = (dragging[leg] || 0) + 1;
+      slider.classList.add('active'); panel.classList.add('busy');
+    });
+    track.addEventListener('pointermove', e => {
+      if (!start) return;
+      const usable = track.clientHeight - 44;              // thumb travel in px
+      const leg = legs[start.leg];
+      const delta = (start.y - e.clientY) / usable;        // up is positive
+      if (isLift) leg.lift = clamp(start.value + delta, 0, 1);
+      else leg.swing = clamp(start.value + delta * 2, -1, 1);
+      dirty.add(start.leg); render();
+    });
+    const end = () => {
+      if (!start) return;
+      dragging[start.leg]--;
+      if (isLift && LIFT_SPRINGS_BACK) { legs[start.leg].lift = 0; dirty.add(start.leg); }
+      start = null; slider.classList.remove('active');
+      if (!panel.querySelector('.slider.active')) panel.classList.remove('busy');
+      render();
+    };
+    track.addEventListener('pointerup', end);
+    track.addEventListener('pointercancel', end);
+  });
+});
+
+// ---------- BITE: fires only when both players press together ----------
+function setBite(down) {
+  if (down === biteHeld) return;
+  biteHeld = down;
+  $('bite').classList.toggle('down', down);
+  send({type:'bite', pressed:down});
+  render();
+}
+$('bite').addEventListener('pointerdown', e => { e.preventDefault(); try { $('bite').setPointerCapture(e.pointerId); } catch (err) {} setBite(true); });
+$('bite').addEventListener('pointerup', () => setBite(false));
+$('bite').addEventListener('pointercancel', () => setBite(false));
+$('bite').addEventListener('contextmenu', e => e.preventDefault());
+
+// send leg updates at most ~20 times a second
+setInterval(() => {
+  for (const name of dirty) send({type:'leg', leg:name, ...legs[name]});
+  dirty.clear();
+}, 50);
+
+function render() {
+  if (!role) {
+    for (const r in ROLES) { const n = players[r] || 0; $('cnt-' + r).textContent = n ? `${n} playing` : 'free'; }
+    return;
+  }
+  const partner = ROLES[role].partner;
+  $('info').textContent = players[partner] ? `${ROLES[partner].name} player is here` : `Waiting for ${ROLES[partner].name}…`;
+  document.querySelectorAll('.leg').forEach(panel => {
+    const name = ROLES[role].legs[panel.dataset.slot];
+    const leg = legs[name];
+    const [sh, kn] = angles[name];
+    panel.querySelectorAll('.slider').forEach(slider => {
+      const isLift = slider.classList.contains('lift');
+      const track = slider.querySelector('.track');
+      const frac = isLift ? leg.lift : (leg.swing + 1) / 2;    // 0 = bottom, 1 = top
+      const usable = track.clientHeight - 44;
+      const y = 22 + usable * (1 - frac);
+      slider.querySelector('.thumb').style.top = y + 'px';
+      const fill = slider.querySelector('.fill');
+      const ref = isLift ? 22 + usable : 22 + usable / 2;       // lift fills from the bottom, swing from the middle
+      fill.style.top = Math.min(y, ref) + 'px';
+      fill.style.height = Math.abs(ref - y) + 'px';
+      slider.classList.toggle('raised', isLift && leg.lift > 0.05);
+      slider.querySelector('.val').textContent = isLift ? `knee ${kn}°` : `shoulder ${sh}°`;
+    });
+  });
+  $('lampMe').classList.toggle('on', biteHeld);
+  $('lampThem').classList.toggle('on', bite.pressed.includes(partner));
+  $('bite').classList.toggle('cool', bite.cooldown && !bite.active);
+}
+
+// ---------- live side view of the chameleon Bittle (head on the right) ----------
+const HIP = { F:[222, 82], B:[98, 82] };
+const THIGH = 44, SHIN = 48;
+const rad = d => d * Math.PI / 180;
+function legPath(name) {
+  // Schematic OpenCat convention: shoulder 0 = thigh straight down, bigger angle swings it back;
+  // knee 0 = shin at 90° to the thigh, a negative knee folds it.
+  const [sh, kn] = angles[name];
+  const far = name[1] === 'R';                       // we look at the dog's left side, right legs are behind
+  const [hx, hy] = HIP[name[0]]; const ox = far ? 8 : 0, oy = far ? -4 : 0;
+  const a1 = rad(sh);
+  const kx = hx + ox - Math.sin(a1) * THIGH, ky = hy + oy + Math.cos(a1) * THIGH;
+  const a2 = a1 - rad(90 + kn);
+  const fx = kx - Math.sin(a2) * SHIN, fy = ky + Math.cos(a2) * SHIN;
+  return { hx:hx + ox, hy:hy + oy, kx, ky, fx, fy, far };
+}
+function drawLeg(name) {
+  const p = legPath(name);
+  const lifted = legs[name].lift > 0.3;
+  const col = LEG_COLOR[name[1]];
+  const op = mine(name) ? 1 : 0.4;
+  const w = p.far ? 7 : 9;
+  return `<g opacity="${op}">
+    <polyline points="${p.hx},${p.hy} ${p.kx},${p.ky} ${p.fx},${p.fy}" fill="none" stroke="${col}" stroke-width="${w}"
+      stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${p.kx}" cy="${p.ky}" r="${w/2+1}" fill="#14161a" stroke="${col}" stroke-width="2"/>
+    <circle cx="${p.fx}" cy="${p.fy}" r="${w/2+2}" fill="${lifted ? 'var(--up)' : col}"/>
+  </g>`;
+}
+function drawDog() {
+  // the laptop sends the head angle ~10x a second; ease towards it so the turn looks smooth
+  headShown += (head - headShown) * 0.35;
+  if (Math.abs(head - headShown) < 0.3) headShown = head;
+  const turn = rad(headShown);
+  const groundY = 144;   // where a front foot stands in the neutral pose (shoulder 42, knee 13)
+  let s = `<line x1="0" y1="${groundY}" x2="320" y2="${groundY}" stroke="#3b424e" stroke-width="2"/>`;
+  s += ['FR', 'BR'].map(drawLeg).join('');                                       // far legs first
+  // tail curl, body, crest
+  s += `<path d="M86 76 C 50 70, 30 90, 40 108 C 48 122, 70 116, 64 102 C 60 94, 50 98, 54 104" fill="none" stroke="var(--cham)" stroke-width="7" stroke-linecap="round"/>`;
+  s += `<rect x="80" y="56" width="160" height="38" rx="18" fill="var(--cham)"/>`;
+  s += `<path d="M96 57 L104 46 L112 57 L120 46 L128 57 L136 46 L144 57 L152 46 L160 57 L168 46 L176 57 L184 46 L192 57 L200 46 L208 57 L216 46 L224 57" fill="#2f9a54"/>`;
+  // head with casque and big eye; when it turns we see it foreshortened (squashed sideways from the neck)
+  const squash = Math.max(0.12, Math.abs(Math.cos(turn)));
+  const facing = Math.cos(turn) < 0 ? -1 : 1;                  // past 90 degrees it points backwards
+  s += `<g transform="translate(234 72) scale(${(squash * facing).toFixed(3)} 1) translate(-234 -72)">`;
+  s += `<path d="M232 60 L262 36 L300 56 L300 74 L268 88 L234 88 Z" fill="var(--cham)"/>`;
+  s += `<circle cx="276" cy="58" r="10" fill="#2f9a54"/><circle cx="278" cy="57" r="5.5" fill="#14161a"/><circle cx="280" cy="55" r="1.8" fill="#fff"/>`;
+  s += `<line x1="268" y1="74" x2="300" y2="68" stroke="#1f6e3b" stroke-width="2"/>`;
+  s += `</g>`;
+  // top-view dial: grey arc = everything the head servo can reach, arrow = where it points now
+  const cx = 34, cy = 50, r = 20, lim = rad(120);
+  const pt = (a, rr) => `${(cx + Math.sin(a) * rr).toFixed(1)} ${(cy - Math.cos(a) * rr).toFixed(1)}`;
+  const active = bite.active || Math.abs(headShown) > 0.5;
+  s += `<path d="M ${pt(-lim, r)} A ${r} ${r} 0 1 1 ${pt(lim, r)}" fill="none" stroke="#3b424e" stroke-width="5" stroke-linecap="round"/>`;
+  s += `<line x1="${cx}" y1="${cy}" x2="${pt(turn, r).split(' ')[0]}" y2="${pt(turn, r).split(' ')[1]}" stroke="${active ? 'var(--tongue)' : 'var(--muted)'}" stroke-width="3" stroke-linecap="round"/>`;
+  s += `<circle cx="${cx}" cy="${cy}" r="4" fill="var(--cham)"/>`;
+  s += `<text x="${cx}" y="${cy + r + 14}" fill="var(--muted)" font-size="9" text-anchor="middle" font-family="system-ui">head ${Math.round(headShown)}°</text>`;
+  s += ['FL', 'BL'].map(drawLeg).join('');                                       // near legs on top
+  s += `<text x="160" y="22" fill="var(--muted)" font-size="11" text-anchor="middle" font-family="system-ui">`
+     + `<tspan fill="var(--legA)">●</tspan> left legs   <tspan fill="var(--legB)">●</tspan> right legs   faded = partner</text>`;
+  if (bite.active) s += `<text x="160" y="40" fill="var(--tongue)" font-size="14" font-weight="800" text-anchor="middle" font-family="system-ui">HEAD SWEEP!</text>`;
+  $('dog').innerHTML = s;
+  requestAnimationFrame(drawDog);
+}
+requestAnimationFrame(drawDog);
+window.addEventListener('resize', render);
+</script>
+</body>
+</html>

@@ -9,6 +9,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -17,6 +18,7 @@ import server  # noqa: E402
 
 # Servo limits of the Bittle legs, from angleLimit in software/arduino/src/OpenCat.h (BITTLE).
 SERVO_LIMITS = {
+    0: (-120, 120),                                                    # head
     8: (-200, 80), 9: (-200, 80), 10: (-80, 200), 11: (-80, 200),     # shoulders
     12: (-80, 200), 13: (-80, 200), 14: (-80, 200), 15: (-80, 200),   # knees
 }
@@ -69,6 +71,89 @@ class PageAndServerTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(status["legs"][other], {"swing": 0.0, "lift": 0.0})
                 await ws.close()
 
+    async def test_horizontal_page_and_app_files_load(self):
+        response = await self.client.get("/horizontal")
+        self.assertEqual(response.status, 200)
+        page = await response.text()
+        self.assertIn("BITE", page)
+        self.assertIn('rel="manifest"', page)
+        response = await self.client.get("/manifest.webmanifest")
+        self.assertEqual(response.status, 200)
+        manifest = json.loads(await response.text())
+        self.assertEqual(manifest["start_url"], "/horizontal")
+        for icon in manifest["icons"]:
+            with self.subTest(icon=icon["src"]):
+                response = await self.client.get(icon["src"])
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.content_type, "image/png")
+        response = await self.client.get("/sw.js")
+        self.assertEqual(response.status, 200)
+        self.assertIn("javascript", response.content_type)
+
+    async def test_status_sends_the_angles_the_robot_gets(self):
+        # the horizontal page draws the legs from these, so it needs no copy of the formula
+        self.game.legs["FL"] = {"swing": 0.5, "lift": 1.0}
+        ws = await self.client.ws_connect("/ws")
+        status = await self.receive_status(ws)
+        for name, leg in self.game.legs.items():
+            self.assertEqual(status["angles"][name], list(self.game.leg_angles(name, **leg)))
+        await ws.close()
+
+    async def latest_status(self, ws):
+        """The newest status, skipping older ones that other players' moves sent to this phone too."""
+        status = await self.receive_status(ws)
+        while True:
+            try:
+                status = await asyncio.wait_for(ws.receive_json(), timeout=0.1)
+            except asyncio.TimeoutError:
+                return status
+
+    async def join(self, role):
+        ws = await self.client.ws_connect("/ws")
+        await ws.send_str(json.dumps({"type": "join", "role": role}))
+        await self.latest_status(ws)
+        return ws
+
+    async def bite(self, ws, pressed=True):
+        await ws.send_str(json.dumps({"type": "bite", "pressed": pressed}))
+        return await self.latest_status(ws)
+
+    async def test_bite_alone_does_nothing(self):
+        front = await self.join("front")
+        await self.join("back")
+        status = await self.bite(front)
+        self.assertEqual(status["bite"]["pressed"], ["front"])
+        self.assertFalse(status["bite"]["active"])
+        self.assertFalse(self.game.head_used)
+        self.assertEqual(self.game.command().split()[1], "8")  # no head in the command yet
+
+    async def test_bite_together_sweeps_the_head(self):
+        quick = [(0, 0.0), (-120, 0.1), (120, 0.2), (0, 0.3)]
+        with mock.patch.object(server, "HEAD_SPIN", quick), mock.patch.object(server, "BITE_COOLDOWN_S", 0.1):
+            front, back = await self.join("front"), await self.join("back")
+            await self.bite(front)
+            await self.bite(back)
+            self.assertTrue(self.game.spinning)
+            self.assertEqual(self.game.pending, server.BITE_EXTRA_COMMANDS)
+            self.assertEqual(self.game.command().split()[1], str(server.HEAD_JOINT))
+            # pressing again during the sweep does not start a second one
+            self.assertFalse(self.game.press_bite(object(), "front", True, self._noop))
+            await asyncio.sleep(0.5)
+            self.assertFalse(self.game.spinning)
+            self.assertEqual(self.game.head, 0)
+            self.assertEqual(self.game.command().split()[1:3], [str(server.HEAD_JOINT), "0"])
+
+    async def test_partner_tapping_shortly_after_also_counts(self):
+        front, back = await self.join("front"), await self.join("back")
+        await self.bite(front)
+        await self.bite(front, pressed=False)  # a quick tap...
+        await self.bite(back)                  # ...and the partner taps right after
+        self.assertTrue(self.game.spinning)
+
+    @staticmethod
+    async def _noop():
+        pass
+
 
 class LegAnglesTest(unittest.TestCase):
     def test_angles_stay_within_servo_limits(self):
@@ -97,6 +182,23 @@ class LegAnglesTest(unittest.TestCase):
 
     def test_default_is_simple(self):
         self.assertIs(server.Game().leg_angles, server.leg_angles)
+
+    def test_head_sweep_uses_the_whole_range_and_ends_in_the_middle(self):
+        end = server.HEAD_SPIN[-1][1]
+        angles = [server.head_angle_at(end * i / 200) for i in range(201)]
+        self.assertEqual(min(angles), server.HEAD_LIMITS[0])
+        self.assertEqual(max(angles), server.HEAD_LIMITS[1])
+        self.assertEqual(angles[0], 0)
+        self.assertEqual(angles[-1], 0)
+
+    def test_head_stays_within_its_servo_limits(self):
+        game = server.Game()
+        game.head_used = True
+        for head in (-500, -120, 0, 120, 500):
+            game.head = head
+            angle = int(game.command().split()[2])
+            low, high = SERVO_LIMITS[0]
+            self.assertTrue(low <= angle <= high, f"{angle} outside {low}..{high}")
 
 
 if __name__ == "__main__":

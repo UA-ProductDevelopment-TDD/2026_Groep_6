@@ -57,6 +57,27 @@ A walking hint: Bittle walks by moving diagonal pairs of legs together. So the l
 
 The little dog at the top of the screen shows all four legs, including your partner's. **Reset legs** puts all four feet down in the middle.
 
+## Horizontal version: sliders and BITE (`/horizontal`)
+
+A landscape page for the front / back split, made by the UI pair. Open `http://<laptop IP>:8080/horizontal` (or tap the link under the role picker) and hold the phone sideways.
+
+- One player picks **FRONT LEGS**, the other **BACK LEGS**.
+- Each side of the screen is one leg (left side = the dog's left leg) with two sliders: **Swing** (outer edge) moves the leg forward/back and stays where you leave it, **Lift** (inner edge) raises the foot and drops back down when you let go (`LIFT_SPRINGS_BACK` in the page).
+- The middle shows a **live side view** of the chameleon Bittle. The server sends the joint angles it gives the robot (`angles` in the status), so the drawing follows `--legs` and needs no copy of the formula. Your legs are bright, your partner's faded.
+- **BITE** only works when **both players press together** (within `BITE_WINDOW_S`, or while the other is still holding). Then the robot beeps and the head servo sweeps through its whole range: all the way to one side, all the way to the other, and back to the middle (about 3 s). A dial in the drawing shows where the head points. It's a test of the servo before the head is rebuilt into the chameleon's tongue.
+
+A full 360° turn isn't possible: a normal servo can't spin round, and the firmware limits the Bittle's head to -120..+120° (`angleLimit` in `software/arduino/src/OpenCat.h`). In Bittle Studio the 3D head stops at ±90°, the limit of the 3D model.
+The head only joins the `i` command after the first BITE, so nothing changes for players on the portrait page.
+
+### Install it as an app on the phone
+
+`/horizontal` can be put on the home screen as an app: chameleon icon, fullscreen, and (on Android) locked to landscape. The laptop server must still be running.
+
+- **Android (Chrome):** Chrome only installs apps from secure sites, and the laptop is plain `http://`. So first open `chrome://flags`, search **Insecure origins treated as secure**, type the laptop address (e.g. `http://192.168.43.127:8080`, without `/horizontal`), set it to **Enabled** and tap **Relaunch**. Then open `/horizontal`, tap **⋮** > **Add to home screen** > **Install** (not "Create shortcut").
+- **iPhone (Safari):** open `/horizontal`, tap **Share** > **Add to Home Screen**. iPhones can't lock the direction, so hold the phone sideways.
+
+The app remembers the laptop address. If the laptop gets another address, delete the app and install it again.
+
 ## Tuning
 
 All the numbers are at the top of `server.py`:
@@ -69,6 +90,9 @@ All the numbers are at the top of `server.py`:
 | `SEND_RATE_HZ` | How often the robot gets new angles. Lower it if the robot stutters over Bluetooth |
 | `START_COMMANDS` | Sent once at the start. `gb` turns off gyro balancing |
 | `NATURAL`, `EXTRA_LIFT` | Knee curves and lift for `--legs natural` (see below) |
+| `HEAD_JOINT`, `HEAD_SPIN` | Which servo BITE sweeps (0 = head; later the tongue servo) and the sweep as (angle, seconds) points. Use smaller angles to test carefully first |
+| `BITE_EXTRA_COMMANDS` | Sent when BITE starts (default a beep, `[]` for silence) |
+| `BITE_WINDOW_S`, `BITE_COOLDOWN_S` | How close together the two presses must be, and the rest time after a sweep |
 
 The defaults come from Bittle's own walking gait in the OpenCat firmware. They haven't been tested on a real robot yet. If a leg moves the wrong way or too far, change these numbers first. Start with small moves. If the robot falls over and tries to stand back up on its own, that's the firmware's fall recovery.
 
@@ -93,7 +117,7 @@ After changing the page or `server.py`, run the automatic test in this folder:
 python -m unittest discover -s tests -v
 ```
 
-It checks that the page loads, that every role can join and move only its own legs, that the server sends the roles to the page, and that both leg styles stay within the Bittle's servo limits. It needs no robot. Then start `python server.py --dry-run` and check on a phone (or in a browser) that the pads move.
+It checks that the page loads, that every role can join and move only its own legs, that the server sends the roles to the page, and that both leg styles stay within the Bittle's servo limits. For the horizontal page it checks that the page and app files load, that BITE alone does nothing, that BITE together sweeps the head through its whole range and back to 0, and that the head stays within its servo limits. It needs no robot. Then start `python server.py --dry-run` and check on a phone (or in a browser) that the pads move.
 
 ## Tested in Bittle Studio
 
@@ -103,5 +127,7 @@ The `--studio` connection was tested against the Studio's physics simulation. An
 
 - `server.py`: the laptop server (web page, game logic, leg movement, robot connection)
 - `static/index.html`: the phone page
+- `static/horizontal.html`: the landscape page with sliders, live side view and BITE
+- `static/manifest.webmanifest`, `static/sw.js`, `static/icons/`: make `/horizontal` installable as an app
 - `tests/test_server.py`: the automatic test
 - `requirements.txt`: Python packages

@@ -37,6 +37,8 @@ Open het zwarte venster in `software\two-player-controller` (zie stap 2 hierbove
 | **Bittle Studio** (3D-simulatie) | `python server.py --studio` |
 | Alleen de pagina testen, zonder robot | `python server.py --dry-run` |
 
+Krijg je **"Python is niet gevonden"** (met een verwijzing naar de Microsoft Store)? Typ dan `py` in plaats van `python`, bijvoorbeeld `py server.py --studio`.
+
 - **USB:** het COM-nummer vind je in **Apparaatbeheer > Poorten (COM & LPT)**. Zoek "USB-Enhanced-SERIAL CH343". Zet ook de batterij van de robot aan, want USB alleen geeft te weinig stroom voor de motoren. Sluit de Seriële Monitor van Arduino IDE en de Petoi-app, want maar één programma tegelijk kan de poort gebruiken.
 - **Bluetooth:** sluit eerst de Petoi-app op je telefoon. De robot laat maar één Bluetooth-verbinding tegelijk toe.
 - **Bittle Studio:** start eerst de Studio (dubbelklik `software\bittle-studio\launchers\windows\Start Bittle Studio`) en wacht tot ze in je browser openstaat. Start daarna de server. De server zet de physics van de Studio zelf aan. Druk je in de Studio op **Reset**, druk dan daarna op **Run physics**.
@@ -55,6 +57,7 @@ Open het zwarte venster in `software\two-player-controller` (zie stap 2 hierbove
    netsh advfirewall firewall add rule name="Bittle Duo" dir=in action=allow protocol=TCP localport=8080
    ```
    Helpt dat niet? Ga dan naar **Windows Defender Firewall met geavanceerde beveiliging > Regels voor binnenkomende verbindingen** en verwijder de **python**-regels met een rood blokkeer-icoon. Start de server opnieuw en klik op **Toestaan**.
+5. Werkt het nog steeds niet? Dan staat de hotspot in Windows misschien als **Openbaar netwerk**, met "alle binnenkomende verbindingen blokkeren" aan. Dat gaat boven elke firewallregel. Klik rechtsonder op het **wifi-icoon** > het pijltje **>** > het **(i)** naast je hotspot, en zet **Type netwerkprofiel** op **Privénetwerk**. Doe dat alleen voor je eigen hotspot.
 
 ---
 
@@ -70,6 +73,23 @@ Open het zwarte venster in `software\two-player-controller` (zie stap 2 hierbove
    - **Laat los** om de voet neer te zetten.
 3. Bittle loopt met diagonale paren: linksvoor gaat samen met rechtsachter, en rechtsvoor met linksachter. Zeg het ritme hardop tegen elkaar.
 4. **Reset legs** zet alle vier de voeten weer in het midden.
+
+### Horizontale versie: schuifregelaars en BITE
+
+Open `http://<adres-van-de-laptop>:8080/horizontal` (of tik op de link onder de rollen) en houd de telefoon liggend.
+
+1. Eén speler kiest **FRONT LEGS** (voorpoten), de andere **BACK LEGS** (achterpoten).
+2. Links op het scherm staat de linkerpoot, rechts de rechterpoot, elk met twee schuifregelaars:
+   - **Swing** (buitenkant) zwaait de poot naar voor of naar achter en blijft staan waar je hem loslaat.
+   - **Lift** (binnenkant) tilt de voet op en zakt terug als je loslaat.
+3. In het midden zie je de hond live bewegen.
+4. Druk jullie **samen** op **BITE**, dan piept de robot en draait het hoofd helemaal naar de ene kant, helemaal naar de andere kant en terug naar het midden. Alleen drukken doet niets. Zo testen we de servo voor de tong later.
+
+**Als app op je telefoon zetten** (eenmalig):
+- **Android (Chrome):** open `chrome://flags`, zoek **Insecure origins treated as secure**, typ het laptopadres (bv. `http://192.168.43.127:8080`, zonder `/horizontal`), zet het op **Enabled** en tik op **Relaunch**. Open daarna `/horizontal`, tik op **⋮** > **Toevoegen aan startscherm** > **Installeren** (niet "Snelkoppeling maken").
+- **iPhone (Safari):** open `/horizontal`, tik op **Deel** > **Zet op beginscherm**.
+
+Krijgt de laptop een ander adres (andere hotspot)? Verwijder de app dan en installeer ze opnieuw.
 
 In Bittle Studio houdt **Follow** de camera op de hond, en **Fullscreen** maakt het 3D-beeld schermvullend. Met Esc ga je terug.
 
